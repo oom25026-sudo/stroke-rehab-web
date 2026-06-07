@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Digital Twin Dashboard</title>
+
+<link rel="stylesheet" href="style.css">
+
+<script defer src="script.js"></script>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Digital Twin Dashboard</h1>
+
+    <div class="card">
+
+        <h2>Orientation</h2>
+
+        <h3>Roll : <span id="roll">0</span>°</h3>
+
+        <h3>Pitch : <span id="pitch">0</span>°</h3>
+
+        <h3>Yaw : <span id="yaw">0</span>°</h3>
+
+        <button id="startBtn">Start</button>
+
+        <button id="stopBtn">Stop</button>
+
+        <button id="resetBtn">Reset</button>
+
+    </div>
+
+    <div class="card">
+
+        <h2>Accelerometer</h2>
+
+        <p>X : <span id="ax">0</span></p>
+        <p>Y : <span id="ay">0</span></p>
+        <p>Z : <span id="az">0</span></p>
+
+    </div>
+
+    <div class="card">
+
+        <h2>Gyroscope</h2>
+
+        <p>X : <span id="gx">0</span></p>
+        <p>Y : <span id="gy">0</span></p>
+        <p>Z : <span id="gz">0</span></p>
+
+    </div>
+
+    <div class="card">
+
+        <h2>3D Model</h2>
+
+        <div id="viewer"></div>
+
+    </div>
+
+    <div class="card">
+
+        <h2>Rehab Progress</h2>
+
+        <div class="progress">
+
+            <div id="progressBar"></div>
+
+        </div>
+
+        <br>
+
+        <h3>Count : <span id="count">0</span></h3>
+
+    </div>
+
+</div>
+
+</body>
+</html>
