@@ -1,85 +1,83 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>Digital Twin Dashboard</title>
 
 <link rel="stylesheet" href="style.css">
-
 <script defer src="script.js"></script>
 
 </head>
-
 <body>
 
 <div class="container">
 
-    <h1>Digital Twin Dashboard</h1>
+<h1>Digital Twin Dashboard</h1>
 
-    <div class="card">
+<div class="card">
 
-        <h2>Orientation</h2>
+<h2>Training Control</h2>
 
-        <h3>Roll : <span id="roll">0</span>°</h3>
+<p>Current Set : <span id="currentSet">1</span></p>
+<p>Count : <span id="count">0</span></p>
+<p>Time : <span id="timer">0 s</span></p>
 
-        <h3>Pitch : <span id="pitch">0</span>°</h3>
+<button id="startBtn">Start</button>
+<button id="stopBtn">Stop</button>
+<button id="resetBtn">Reset</button>
+<button id="saveSetBtn">Save Set</button>
+<button id="downloadBtn">Download CSV</button>
 
-        <h3>Yaw : <span id="yaw">0</span>°</h3>
+</div>
 
-        <button id="startBtn">Start</button>
+<div class="card">
 
-        <button id="stopBtn">Stop</button>
+<h2>Orientation</h2>
 
-        <button id="resetBtn">Reset</button>
+<p>Roll : <span id="roll">0</span>°</p>
+<p>Pitch : <span id="pitch">0</span>°</p>
+<p>Yaw : <span id="yaw">0</span>°</p>
 
-    </div>
+</div>
 
-    <div class="card">
+<div class="card">
 
-        <h2>Accelerometer</h2>
+<h2>Accelerometer</h2>
 
-        <p>X : <span id="ax">0</span></p>
-        <p>Y : <span id="ay">0</span></p>
-        <p>Z : <span id="az">0</span></p>
+<p>X : <span id="ax">0</span></p>
+<p>Y : <span id="ay">0</span></p>
+<p>Z : <span id="az">0</span></p>
 
-    </div>
+</div>
 
-    <div class="card">
+<div class="card">
 
-        <h2>Gyroscope</h2>
+<h2>Progress</h2>
 
-        <p>X : <span id="gx">0</span></p>
-        <p>Y : <span id="gy">0</span></p>
-        <p>Z : <span id="gz">0</span></p>
+<div class="progress">
+<div id="progressBar"></div>
+</div>
 
-    </div>
+</div>
 
-    <div class="card">
+<div class="card">
 
-        <h2>3D Model</h2>
+<h2>Training Results</h2>
 
-        <div id="viewer"></div>
+<div id="resultArea"></div>
 
-    </div>
+</div>
 
-    <div class="card">
+<div class="card">
 
-        <h2>Rehab Progress</h2>
+<h2>3D Model</h2>
 
-        <div class="progress">
+<div id="viewer">
+Male Fighter.glb
+</div>
 
-            <div id="progressBar"></div>
-
-        </div>
-
-        <br>
-
-        <h3>Count : <span id="count">0</span></h3>
-
-    </div>
+</div>
 
 </div>
 
