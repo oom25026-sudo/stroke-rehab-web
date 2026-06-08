@@ -1,37 +1,340 @@
+:root {
+   --bg-main: #f4f6fa;
+   --bg-card: #ffffff;
+   --primary: #2563eb;
+   --primary-light: #eff6ff;
+   --success: #10b981;
+   --danger: #ef4444;
+   --text-main: #0f172a;
+   --text-muted: #64748b;
+   --border-color: #e2e8f0;
+   --radius-lg: 16px;
+   --radius-md: 10px;
+   --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+}
+
+* {
+   margin: 0;
+   padding: 0;
+   box-sizing: border-box;
+   font-family: 'Prompt', sans-serif;
+}
+
 body {
-    margin: 0;
-    padding: 20px;
-    background: #f4f6f8;
-    font-family: Arial, sans-serif;
+   background-color: var(--bg-main);
+   color: var(--text-main);
+   min-height: 100vh;
+   display: flex;
+   flex-direction: column;
+   padding: 16px 24px;
 }
 
-.container {
-    max-width: 1000px;
-    margin: auto;
+/* ==========================================================================
+  HEADER COMPONENT
+  ========================================================================== */
+.app-header {
+   background-color: var(--bg-card);
+   border-radius: var(--radius-lg);
+   padding: 16px 24px;
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   box-shadow: var(--shadow-sm);
+   border: 1px solid var(--border-color);
+   margin-bottom: 20px;
 }
 
-h1 {
-    text-align: center;
+.header-left {
+   display: flex;
+   align-items: center;
+   gap: 16px;
+}
+
+.app-icon {
+   background-color: var(--primary-light);
+   color: var(--primary);
+   width: 44px;
+   height: 44px;
+   border-radius: var(--radius-md);
+   display: flex;
+   justify-content: center;
+   align-items: center;
+}
+
+.brand h1 {
+   font-size: 1.25rem;
+   font-weight: 600;
+   color: var(--text-main);
+}
+
+.brand p {
+   font-size: 0.85rem;
+   color: var(--text-muted);
+}
+
+.header-right {
+   display: flex;
+   align-items: center;
+   gap: 20px;
+}
+
+.status-indicator {
+   background-color: #ecfdf5;
+   color: #065f46;
+   padding: 6px 14px;
+   border-radius: 30px;
+   font-size: 0.85rem;
+   font-weight: 500;
+   display: flex;
+   align-items: center;
+   gap: 8px;
+}
+
+.status-indicator .dot {
+   width: 8px;
+   height: 8px;
+   background-color: var(--success);
+   border-radius: 50%;
+   display: inline-block;
+}
+
+.clock {
+   font-size: 1.1rem;
+   font-weight: 500;
+   color: var(--text-main);
+   background-color: #f8fafc;
+   padding: 6px 14px;
+   border-radius: var(--radius-md);
+   border: 1px solid var(--border-color);
+}
+
+/* ==========================================================================
+  LAYOUT STRUCTURE
+  ========================================================================== */
+.dashboard-grid {
+   display: grid;
+   grid-template-columns: 340px 1fr;
+   gap: 20px;
+   margin-bottom: 20px;
 }
 
 .card {
-    background: white;
-    padding: 20px;
-    margin-bottom: 20px;
-    border-radius: 15px;
-    box-shadow: 0 2px 10px rgba(0,0,0,.1);
+   background-color: var(--bg-card);
+   border-radius: var(--radius-lg);
+   border: 1px solid var(--border-color);
+   box-shadow: var(--shadow-sm);
+   overflow: hidden;
+   display: flex;
+   flex-direction: column;
 }
 
-button {
-    padding: 10px 15px;
-    margin: 5px;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    background-color: #e0e0e0;
-    transition: background-color 0.2s;
+.card-header {
+   padding: 18px 24px;
+   border-bottom: 1px solid var(--border-color);
+   display: flex;
+   align-items: center;
 }
 
-button:hover {
-    background-color: #d5d5d5;
+.card-header.space-between {
+   justify-content: space-between;
+}
+
+.card-header h2 {
+   font-size: 1.05rem;
+   font-weight: 500;
+   color: var(--text-main);
+   display: flex;
+   align-items: center;
+   gap: 8px;
+}
+
+/* ==========================================================================
+  SIDEBAR & SENSOR PANEL
+  ========================================================================== */
+.sensor-card {
+   height: 100%;
+}
+
+.sensor-list {
+   padding: 20px;
+   display: flex;
+   flex-direction: column;
+   gap: 12px;
+   flex-grow: 1;
+}
+
+.sensor-row {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   padding: 16px;
+   border-radius: var(--radius-md);
+   background-color: #f8fafc;
+   border: 1px solid #f1f5f9;
+}
+
+.sensor-meta {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+}
+
+.sensor-meta .name {
+   font-weight: 500;
+   font-size: 0.95rem;
+   color: var(--text-muted);
+}
+
+.sensor-value {
+   font-size: 1.4rem;
+   font-weight: 600;
+   color: var(--text-main);
+}
+
+.sensor-value .unit {
+   font-size: 0.85rem;
+   font-weight: 400;
+   color: var(--text-muted);
+   margin-left: 4px;
+}
+
+/* CONTROLS BUTTONS */
+.control-actions {
+   padding: 20px;
+   display: grid;
+   grid-template-columns: 1fr 1fr;
+   gap: 10px;
+   border-top: 1px solid var(--border-color);
+}
+
+.btn {
+   padding: 12px;
+   border: none;
+   border-radius: var(--radius-md);
+   font-size: 0.95rem;
+   font-weight: 500;
+   cursor: pointer;
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   gap: 8px;
+   transition: all 0.2s ease;
+}
+
+.btn-start { background-color: var(--primary); color: white; grid-column: span 1; }
+.btn-start:hover { background-color: #1d4ed8; }
+
+.btn-stop { background-color: var(--danger); color: white; grid-column: span 1; }
+.btn-stop:hover { background-color: #dc2626; }
+
+.btn-reset { background-color: #f1f5f9; color: var(--text-muted); grid-column: span 2; border: 1px solid var(--border-color); }
+.btn-reset:hover { background-color: #e2e8f0; color: var(--text-main); }
+
+/* ==========================================================================
+  3D CAMERA VIEWPORT CONTROL
+  ========================================================================== */
+.view-controls {
+   display: flex;
+   background-color: #f1f5f9;
+   padding: 4px;
+   border-radius: 8px;
+}
+
+.view-btn {
+   padding: 6px 14px;
+   border: none;
+   background: transparent;
+   font-size: 0.85rem;
+   font-weight: 500;
+   color: var(--text-muted);
+   cursor: pointer;
+   border-radius: 6px;
+   transition: all 0.15s ease;
+}
+
+.view-btn:hover {
+   background-color: #e2e8f0;
+}
+
+.scene-wrapper {
+   padding: 20px;
+   background-color: #ffffff;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   position: relative;
+}
+
+#scene-container {
+   width: 100%;
+   height: 400px;
+   background-color: #f8fafc;
+   border-radius: var(--radius-md);
+   overflow: hidden;
+   border: 1px solid var(--border-color);
+}
+
+.scene-hint {
+   margin-top: 10px;
+   font-size: 0.85rem;
+   color: #a0aec0;
+}
+
+/* ==========================================================================
+  BOTTOM ANALYTICS CHART
+  ========================================================================== */
+.analytics-area {
+   margin-bottom: 20px;
+}
+
+.chart-container {
+   padding: 24px;
+   height: 280px;
+   width: 100%;
+}
+
+/* ==========================================================================
+  FOOTER
+  ========================================================================== */
+.app-footer {
+   text-align: center;
+   padding: 10px 0;
+   color: var(--text-muted);
+   font-size: 0.85rem;
+   margin-top: auto;
+}
+
+/* Responsive */
+@media (max-width: 968px) {
+   .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+.indicator-container { display: flex; flex-direction: column; gap: 15px; margin-top: 10px; }
+.bar-wrapper { display: flex; align-items: center; gap: 10px; }
+.bar-bg { flex: 1; height: 20px; background: #1e293b; border-radius: 10px; overflow: hidden; }
+.bar-fill { height: 100%; width: 50%; background: #38bdf8; transition: width 0.2s ease, background 0.3s; }
+
+/* สำหรับหน้าจอมือถือ (กว้างไม่เกิน 768px) */
+@media (max-width: 768px) {
+   .dashboard-grid,
+   .analytics-area,
+   .app-header .header-right {
+       display: none !important;
+   }
+
+   body {
+       padding: 10px;
+   }
+  
+   .mobile-display {
+       display: block !important;
+       width: 100%;
+   }
+}
+
+/* สำหรับ Desktop ให้ซ่อนตัวควบคุมมือถือ */
+@media (min-width: 769px) {
+   .mobile-display {
+       display: none !important;
+   }
 }
