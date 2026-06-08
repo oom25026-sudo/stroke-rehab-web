@@ -1,5 +1,5 @@
 // ==========================================
-// 0. FIREBASE REALTIME DATABASE SETUP
+// 1. FIREBASE REALTIME DATABASE SETUP
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // ==========================================
-// 1. THREE.JS SCENE SETUP
+// 2. THREE.JS SCENE SETUP (โมเดล 3D)
 // ==========================================
 const container = document.getElementById("scene-container");
 const scene = new THREE.Scene();
@@ -39,9 +39,6 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 3.0);
 dirLight.position.set(5, 10, 7);
 scene.add(dirLight);
 
-// ==========================================
-// 2. LOAD 3D MODEL
-// ==========================================
 let phoneGroup = new THREE.Group();
 phoneGroup.rotation.order = 'YXZ';
 scene.add(phoneGroup);
@@ -55,32 +52,36 @@ loader.load(
 );
 
 // ==========================================
-// 3. STATE & SENSOR LOGIC (Low-Pass Filter & Training)
+// 3. STATE & REHAB CONTROL VARIABLES
 // ==========================================
-let roll = 0, pitch = 0, yaw = 0;
-let offsetRoll = 0, offsetPitch = 0, offsetYaw = 0;
-let isTrackingRealSensor = false;
-let q = [1.0, 0.0, 0.0, 0.0];
-const beta = 0.1;
-
-// ระบบควบคุมเซตและเวลาฝึก
 let training = false;
 let startTime = 0;
 let timerInterval;
+
 let currentSet = 1;
+let count = 0;
+let armUp = false;
 let results = [];
 
-// ตัวแปรสำหรับ Low-Pass Filter ค่านิ่งเสถียร
+// ค่าสำหรับระบบตัวกรองสัญญาณ Low-Pass Filter
+let roll = 0, pitch = 0, yaw = 0;
+let offsetRoll = 0, offsetPitch = 0, offsetYaw = 0;
 let filteredRoll = 0, filteredPitch = 0, filteredYaw = 0;
-const FILTER_ALPHA = 0.25;         // ค่าความไวการตอบสนอง
-const ORIENTATION_THRESHOLD = 0.2;  // ล็อกค่านิ่งเมื่อขยับต่ำกว่ากำหนด
 
+const FILTER_ALPHA = 0.25;         
+const ORIENTATION_THRESHOLD = 0.2; 
+
+let q = [1.0, 0.0, 0.0, 0.0]; // สำหรับสัญญาน Madgwick Filter
+
+// ==========================================
+// 4. RECEIVE & PROCESS SENSOR DATA (รวมระบบกรอง + นับครั้ง + Firebase)
+// ==========================================
 function receiveSensorData(data) {
    let rawRoll = (data.roll ?? 0) - offsetRoll;
    let rawPitch = (data.pitch ?? 0) - offsetPitch;
    let rawYaw = (data.yaw ?? 0) - offsetYaw;
 
-   // คำนวณผ่านสัญญาณ Low-pass filter
+   // คำนวณสัญญาณผ่านตัวกรอง Low-Pass Filter
    const nextRoll = filteredRoll + FILTER_ALPHA * (rawRoll - filteredRoll);
    const nextPitch = filteredPitch + FILTER_ALPHA * (rawPitch - filteredPitch);
    const nextYaw = filteredYaw + FILTER_ALPHA * (rawYaw - filteredYaw);
@@ -94,7 +95,7 @@ function receiveSensorData(data) {
    pitch = filteredPitch;
    yaw = filteredYaw;
 
-   // แสดงผลบนหน้าเว็บแดชบอร์ด
+   // อัปเดตข้อมูลบนแดชบอร์ดหน้าจอ
    document.getElementById("roll").innerText = roll.toFixed(1);
    document.getElementById("pitch").innerText = pitch.toFixed(1);
    document.getElementById("yaw").innerText = yaw.toFixed(1);
@@ -102,26 +103,26 @@ function receiveSensorData(data) {
    updateChart();
    updateMobileIndicator(roll, pitch);
 
-   // ส่งค่าขึ้นไปยังฐานข้อมูล Firebase Realtime Database แบบเรียลไทม์ (ส่งเฉพาะเมื่อเปิดปุ่มระบบ Start)
+   // อัปเดตข้อมูลและส่งขึ้นฐานข้อมูล Firebase (ทำงานเมื่อกด Start เท่านั้น)
    if (training && isMoving) {
        set(ref(db, "sensor"), {
            roll: parseFloat(roll.toFixed(1)),
            pitch: parseFloat(pitch.toFixed(1)),
            yaw: parseFloat(yaw.toFixed(1)),
+           count: count,
            timestamp: Date.now()
        });
    }
 }
 
 // ==========================================
-// 4. TRAINING CONTROL BUTTON ACTIONS
+// 5. BUTTON ACTIONS (START, STOP, RESET, SAVE, CSV)
 // ==========================================
 document.getElementById("startBtn").onclick = async () => {
     if (training) return;
     training = true;
     startTime = Date.now();
 
-    // ดึงสิทธิ์ใช้งานตัวเซนเซอร์ของมือถือ iOS/Android
     if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
         try { await DeviceMotionEvent.requestPermission(); } catch (e) {}
     }
@@ -142,11 +143,14 @@ document.getElementById("resetBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 
-    filteredRoll = 0; filteredPitch = 0; filteredYaw = 0;
-    roll = 0; pitch = 0; yaw = 0;
+    count = 0;
+    armUp = false;
     currentSet = 1;
     results = [];
+    filteredRoll = 0; filteredPitch = 0; filteredYaw = 0;
+    roll = 0; pitch = 0; yaw = 0;
 
+    document.getElementById("count").textContent = "0";
     document.getElementById("timer").textContent = "0 s";
     document.getElementById("currentSet").textContent = "1";
     document.getElementById("resultArea").innerHTML = "";
@@ -159,11 +163,17 @@ document.getElementById("saveSetBtn").onclick = () => {
     if (!startTime) return;
     const sec = Math.floor((Date.now() - startTime) / 1000);
 
-    results.push({ set: currentSet, time: sec });
+    // บันทึกทั้งรอบเซต จำนวนครั้ง และเวลาที่ใช้
+    results.push({ set: currentSet, count: count, time: sec });
     showResults();
 
     currentSet++;
     document.getElementById("currentSet").textContent = currentSet;
+    
+    // รีเซ็ตค่านับรอบใหม่ในแต่ละเซตข้อมูล
+    count = 0;
+    armUp = false;
+    document.getElementById("count").textContent = "0";
     document.getElementById("timer").textContent = "0 s";
     
     if (training) {
@@ -172,24 +182,26 @@ document.getElementById("saveSetBtn").onclick = () => {
 };
 
 document.getElementById("downloadBtn").onclick = () => {
-    let csv = "Set,Time(s)\n";
-    results.forEach(r => { csv += `${r.set},${r.time}\n`; });
+    let csv = "Set,Count,Time(s)\n";
+    results.forEach(r => { csv += `${r.set},${r.count},${r.time}\n`; });
 
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "rehab_training_results.csv";
+    a.download = "rehab_comprehensive_results.csv";
     a.click();
 };
 
 function showResults() {
     let html = "";
-    results.forEach(r => { html += `<p style="margin:4px 0;">Set ${r.set} : ${r.time} วินาที</p>`; });
+    results.forEach(r => { 
+        html += `<p style="margin:4px 0;">Set ${r.set} : ทำได้ ${r.count} ครั้งในเวลา ${r.time} วินาที</p>`; 
+    });
     document.getElementById("resultArea").innerHTML = html;
 }
 
 // ==========================================
-// 5. MOBILE CONNECT & TARE
+// 6. MOTION SENSOR & COUNTING LOGIC (นับครั้งจากการขยับแกน Y)
 // ==========================================
 document.getElementById('btn-connect').addEventListener('click', async () => {
    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -207,14 +219,31 @@ document.getElementById('btn-tare').addEventListener('click', () => {
 });
 
 function initMobileSensor() {
-   isTrackingRealSensor = true;
    window.addEventListener('devicemotion', (e) => {
        const accel = e.accelerationIncludingGravity;
        const gyro = e.rotationRate;
-       if(accel && gyro) {
+       
+       if (accel && gyro) {
+           // 1. ส่งค่าเข้าการประมวลผลตัวกรองท่าทางและโมเดล 3D
            updateMadgwickFilter(accel.x/9.8, accel.y/9.8, accel.z/9.8, gyro.alpha*Math.PI/180, gyro.beta*Math.PI/180, gyro.gamma*Math.PI/180, 0.01);
            const angles = getEulerAngles(q);
            receiveSensorData({ roll: angles.roll, pitch: angles.pitch, yaw: angles.yaw });
+
+           // 2. ระบบตรวจจับการนับจำนวนครั้ง (Counting Logic จากเวอร์ชันแรก)
+           if (!training) return;
+           const ay = accel.y || 0;
+
+           if (ay > 7 && !armUp) {
+               armUp = true;
+           }
+           if (ay < 3 && armUp) {
+               count++;
+               armUp = false;
+               document.getElementById("count").textContent = count;
+               
+               // ส่งข้อมูลอัปเดตจำนวนครั้งแบบ Realtime ขึ้น Firebase ทันทีที่นับเพิ่ม
+               set(ref(db, "sensor/total_count"), count);
+           }
        }
    });
 }
@@ -238,7 +267,7 @@ function getEulerAngles(q) {
 }
 
 // ==========================================
-// 6. ANIMATION LOOP & CHARTS
+// 7. ANIMATION RENDERING & GRAPH PROGRESS
 // ==========================================
 function animate() {
    requestAnimationFrame(animate);
@@ -253,7 +282,7 @@ window.addEventListener("load", () => {
    if (canvas) {
        chart = new Chart(canvas.getContext("2d"), {
            type: "line",
-           data: { labels: [], datasets: [{ label: "Pitch", data: [], borderColor: "#2563eb", fill: true }] },
+           data: { labels: [], datasets: [{ label: "Pitch Angle", data: [], borderColor: "#2563eb", fill: true }] },
            options: { responsive: true, maintainAspectRatio: false }
        });
    }
@@ -267,7 +296,7 @@ function updateChart() {
    chart.update();
 }
 
-// ฟังก์ชันสลับมุมกล้อง 3D
+// ฟังก์ชันสลับมุมกล้องโมเดล 3D
 function switchView(view) {
    if (view === 'front') camera.position.set(0, 0, 7);
    if (view === 'side') camera.position.set(7, 0, 0);
@@ -293,17 +322,12 @@ function updateMobileIndicator(r, p) {
        rollBar.style.width = rPercent + '%';
        rollBar.style.background = (Math.abs(r) > 45) ? '#ef4444' : '#38bdf8';
    }
-  
    if (pitchBar) {
        let pPercent = Math.min(Math.max((p + 90) / 1.8, 0), 100);
        pitchBar.style.width = pPercent + '%';
    }
 }
 
-// ดักจับการทำงานสำหรับปุ่ม Mobile View
-document.getElementById('m-btn-connect')?.addEventListener('click', () => {
-   document.getElementById('btn-connect').click();
-});
-document.getElementById('m-btn-tare')?.addEventListener('click', () => {
-   document.getElementById('btn-tare').click();
-});
+// รองรับปุ่มคลิกบน Mobile UI
+document.getElementById('m-btn-connect')?.addEventListener('click', () => { document.getElementById('btn-connect').click(); });
+document.getElementById('m-btn-tare')?.addEventListener('click', () => { document.getElementById('btn-tare').click(); });
