@@ -1,3 +1,22 @@
+// 1. นำเข้าโมดูล Firebase สำหรับเชื่อมต่อ Realtime Database
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+// 2. ตั้งค่า Firebase Config ของระบบคุณ
+const firebaseConfig = {
+    apiKey: "AIzaSyBdcc-uTdG3bwpwOmW2104T_pmb4zM6OPs",
+    authDomain: "stroke-rehab-eec16.firebaseapp.com",
+    databaseURL: "https://stroke-rehab-eec16-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "stroke-rehab-eec16",
+    storageBucket: "stroke-rehab-eec16.firebasestorage.app",
+    messagingSenderId: "606765795152",
+    appId: "1:606765795152:web:48a431ab1dfa19a7850e55"
+};
+
+// เริ่มต้นทำงาน Firebase
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
 let training = false;
 let startTime = 0;
 let timerInterval;
@@ -79,7 +98,6 @@ document.getElementById("resetBtn").onclick = () => {
 document.getElementById("saveSetBtn").onclick = () => {
     const sec = Math.floor((Date.now() - startTime) / 1000);
 
-    // บันทึกเฉพาะเซตและเวลา (ตัด count ออกตามโครงสร้างปัจจุบัน)
     results.push({
         set: currentSet,
         time: sec
@@ -91,7 +109,6 @@ document.getElementById("saveSetBtn").onclick = () => {
     document.getElementById("currentSet").textContent = currentSet;
     document.getElementById("timer").textContent = "0 s";
     
-    // รีเซ็ตเวลาเริ่มต้นใหม่สำหรับเซตถัดไป
     if (training) {
         startTime = Date.now();
     }
@@ -127,7 +144,7 @@ function showResults() {
 }
 
 /* ==========================
-   ORIENTATION (Roll, Pitch, Yaw) - REAL-TIME
+   ORIENTATION (Roll, Pitch, Yaw) - REAL-TIME & FIREBASE
 ========================== */
 window.addEventListener("deviceorientation", (event) => {
     if (!training) return;
@@ -140,17 +157,28 @@ window.addEventListener("deviceorientation", (event) => {
     const nextPitch = currentPitch + FILTER_ALPHA * (pitch - currentPitch);
     const nextYaw = currentYaw + FILTER_ALPHA * (yaw - currentYaw);
 
-    if (Math.abs(nextRoll - currentRoll) > ORIENTATION_THRESHOLD) currentRoll = nextRoll;
-    if (Math.abs(nextPitch - currentPitch) > ORIENTATION_THRESHOLD) currentPitch = nextPitch;
-    if (Math.abs(nextYaw - currentYaw) > ORIENTATION_THRESHOLD) currentYaw = nextYaw;
+    let isMoving = false;
+    if (Math.abs(nextRoll - currentRoll) > ORIENTATION_THRESHOLD) { currentRoll = nextRoll; isMoving = true; }
+    if (Math.abs(nextPitch - currentPitch) > ORIENTATION_THRESHOLD) { currentPitch = nextPitch; isMoving = true; }
+    if (Math.abs(nextYaw - currentYaw) > ORIENTATION_THRESHOLD) { currentYaw = nextYaw; isMoving = true; }
 
-    document.getElementById("roll").textContent = currentRoll.toFixed(1);
-    document.getElementById("pitch").textContent = currentPitch.toFixed(1);
-    document.getElementById("yaw").textContent = currentYaw.toFixed(1);
+    if (isMoving) {
+        document.getElementById("roll").textContent = currentRoll.toFixed(1);
+        document.getElementById("pitch").textContent = currentPitch.toFixed(1);
+        document.getElementById("yaw").textContent = currentYaw.toFixed(1);
+
+        // อัปเดตขึ้น Firebase Realtime Database
+        set(ref(db, "sensor"), {
+            roll: parseFloat(currentRoll.toFixed(1)),
+            pitch: parseFloat(currentPitch.toFixed(1)),
+            yaw: parseFloat(currentYaw.toFixed(1)),
+            timestamp: Date.now()
+        });
+    }
 });
 
 /* ==========================
-   ACCELEROMETER (X, Y, Z) - REAL-TIME
+   ACCELEROMETER (X, Y, Z) - REAL-TIME & FIREBASE
 ========================== */
 window.addEventListener("devicemotion", (event) => {
     if (!training) return;
@@ -166,11 +194,21 @@ window.addEventListener("devicemotion", (event) => {
     const nextAy = currentAy + FILTER_ALPHA * (ay - currentAy);
     const nextAz = currentAz + FILTER_ALPHA * (az - currentAz);
 
-    if (Math.abs(nextAx - currentAx) > MOTION_THRESHOLD) currentAx = nextAx;
-    if (Math.abs(nextAy - currentAy) > MOTION_THRESHOLD) currentAy = nextAy;
-    if (Math.abs(nextAz - currentAz) > MOTION_THRESHOLD) currentAz = nextAz;
+    let isMoving = false;
+    if (Math.abs(nextAx - currentAx) > MOTION_THRESHOLD) { currentAx = nextAx; isMoving = true; }
+    if (Math.abs(nextAy - currentAy) > MOTION_THRESHOLD) { currentAy = nextAy; isMoving = true; }
+    if (Math.abs(nextAz - currentAz) > MOTION_THRESHOLD) { currentAz = nextAz; isMoving = true; }
 
-    document.getElementById("ax").textContent = currentAx.toFixed(2);
-    document.getElementById("ay").textContent = currentAy.toFixed(2);
-    document.getElementById("az").textContent = currentAz.toFixed(2);
+    if (isMoving) {
+        document.getElementById("ax").textContent = currentAx.toFixed(2);
+        document.getElementById("ay").textContent = currentAy.toFixed(2);
+        document.getElementById("az").textContent = currentAz.toFixed(2);
+
+        // อัปเดตขึ้น Firebase Realtime Database
+        set(ref(db, "accelerometer"), {
+            x: parseFloat(currentAx.toFixed(2)),
+            y: parseFloat(currentAy.toFixed(2)),
+            z: parseFloat(currentAz.toFixed(2))
+        });
+    }
 });
