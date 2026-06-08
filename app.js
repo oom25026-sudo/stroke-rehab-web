@@ -25,30 +25,20 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 /* ==========================
-   TRAINING
+   TRAINING & FILTER VARIABLES
 ========================== */
 
-let currentSet = 1;
-let count = 0;
-
 let training = false;
-
 let startTime = 0;
-
 let timerInterval = null;
 
-let results = [];
-
-let armUp = false;
-
-// --- ส่วนที่เพิ่มเข้ามาเพื่อให้ค่านิ่ง (Low-Pass Filter) โดยไม่กระทบโค้ดเก่า ---
+// --- ตัวแปรสำหรับระบบกรองสัญญาณ (Low-Pass Filter) ---
 let currentRoll = 0, currentPitch = 0, currentYaw = 0;
 let currentAx = 0, currentAy = 0, currentAz = 0;
 
-const FILTER_ALPHA = 0.12;        // ค่าความนิ่ง (ยิ่งน้อยยิ่งนิ่ง แนะนำในช่วง 0.05 - 0.15)
-const ORIENTATION_THRESHOLD = 0.5; // ถ้านิ่งต่ำกว่า 0.5 องศา จะล็อกค่าไว้ไม่ให้ตัวเลขวิ่งแกว่ง
-const MOTION_THRESHOLD = 0.06;      // ถ้านิ่งต่ำกว่าค่านี้ จะล็อกค่า Accelerometer ไว้
-// -----------------------------------------------------------------------
+const FILTER_ALPHA = 0.12;        // ค่าความสมูทในการกรองสัญญาณ (0.05 - 0.15)
+const ORIENTATION_THRESHOLD = 0.5; // ขีดจำกัดองศาการแกว่ง ถ้าน้อยกว่านี้จะล็อคค่านิ่งไว้
+const MOTION_THRESHOLD = 0.06;      // ขีดจำกัดความเร่งการสั่น
 
 /* ==========================
    START
@@ -112,126 +102,16 @@ document.getElementById("resetBtn").onclick =
 
     clearInterval(timerInterval);
 
-    count = 0;
-
-    armUp = false;
-
-    // รีเซ็ตค่าตัวแปรกรองสัญญาณด้วยเมื่อกด Reset
+    // รีเซ็ตค่าตัวแปรกรองสัญญาณให้เป็นศูนย์
     currentRoll = 0; currentPitch = 0; currentYaw = 0;
     currentAx = 0; currentAy = 0; currentAz = 0;
 
-    document.getElementById("count")
-        .textContent = "0";
-
     document.getElementById("timer")
         .textContent = "0 s";
-
-    document.getElementById("progressBar")
-        .style.width = "0%";
 };
 
 /* ==========================
-   SAVE SET
-========================== */
-
-document.getElementById("saveSetBtn").onclick =
-() => {
-
-    const sec =
-        Math.floor(
-            (Date.now()-startTime)/1000
-        );
-
-    results.push({
-
-        set:currentSet,
-        count:count,
-        time:sec
-
-    });
-
-    showResults();
-
-    currentSet++;
-
-    document.getElementById("currentSet")
-        .textContent =
-        currentSet;
-
-    count = 0;
-
-    document.getElementById("count")
-        .textContent = "0";
-
-    document.getElementById("timer")
-        .textContent = "0 s";
-
-    document.getElementById("progressBar")
-        .style.width = "0%";
-};
-
-/* ==========================
-   CSV
-========================== */
-
-document.getElementById("downloadBtn").onclick =
-() => {
-
-    let csv =
-        "Set,Count,Time\n";
-
-    results.forEach(r=>{
-
-        csv +=
-        `${r.set},${r.count},${r.time}\n`;
-
-    });
-
-    const blob =
-        new Blob(
-            [csv],
-            {type:"text/csv"}
-        );
-
-    const a =
-        document.createElement("a");
-
-    a.href =
-        URL.createObjectURL(blob);
-
-    a.download =
-        "training_results.csv";
-
-    a.click();
-};
-
-/* ==========================
-   RESULT
-========================== */
-
-function showResults(){
-
-    let html = "";
-
-    results.forEach(r=>{
-
-        html +=
-        `<p>
-        Set ${r.set}
-        :
-        ${r.count} ครั้ง
-        |
-        ${r.time} วินาที
-        </p>`;
-    });
-
-    document.getElementById("resultArea")
-        .innerHTML =
-        html;
-}
-
-/* ==========================
-   SEND SENSOR TO FIREBASE
+   SEND SENSOR TO FIREBASE (WITH FILTER)
 ========================== */
 
 window.addEventListener(
@@ -249,7 +129,7 @@ window.addEventListener(
     const yaw =
         event.alpha || 0;
 
-    // --- ประยุกต์ใช้ตัวกรองสยบอาการแกว่งก่อนส่งข้อมูล ---
+    // ประยุกต์ใช้ตัวกรองเพื่อลบอาการสั่นแกว่งก่อนส่งค่า
     const nextRoll = currentRoll + FILTER_ALPHA * (roll - currentRoll);
     const nextPitch = currentPitch + FILTER_ALPHA * (pitch - currentPitch);
     const nextYaw = currentYaw + FILTER_ALPHA * (yaw - currentYaw);
@@ -260,7 +140,7 @@ window.addEventListener(
     if (Math.abs(nextPitch - currentPitch) > ORIENTATION_THRESHOLD) { currentPitch = nextPitch; isMoving = true; }
     if (Math.abs(nextYaw - currentYaw) > ORIENTATION_THRESHOLD) { currentYaw = nextYaw; isMoving = true; }
 
-    // ส่งค่าไปยัง Firebase ต่อเมื่อเซนเซอร์ขยับเกิน Threshold เพื่อป้องกันตัวเลขสั่นตอนวางนิ่งๆ
+    // ส่งค่าไปยัง Firebase เฉพาะตอนที่มีการเคลื่อนไหวพ้นเกณฑ์ที่ตั้งไว้เท่านั้น
     if (isMoving) {
         set(
             ref(db,"sensor"),
@@ -275,7 +155,7 @@ window.addEventListener(
 });
 
 /* ==========================
-   SEND ACCEL
+   SEND ACCEL (WITH FILTER)
 ========================== */
 
 window.addEventListener(
@@ -293,7 +173,7 @@ window.addEventListener(
     const ay = acc.y || 0;
     const az = acc.z || 0;
 
-    // --- ประยุกต์ใช้ตัวกรองความเร่งให้นิ่งสนิท ---
+    // ประยุกต์ใช้ตัวกรองความเร่งให้นิ่งสนิท
     const nextAx = currentAx + FILTER_ALPHA * (ax - currentAx);
     const nextAy = currentAy + FILTER_ALPHA * (ay - currentAy);
     const nextAz = currentAz + FILTER_ALPHA * (az - currentAz);
@@ -313,33 +193,6 @@ window.addEventListener(
                 z: currentAz
             }
         );
-    }
-
-    // ใช้ค่าที่นิ่งแล้ว (currentAy) ในการจับสัญญาณขึ้น-ลงเพื่อความแม่นยำสูงสุด
-    if(currentAy > 7 && !armUp){
-
-        armUp = true;
-    }
-
-    if(currentAy < 3 && armUp){
-
-        armUp = false;
-
-        count++;
-
-        document.getElementById("count")
-            .textContent =
-            count;
-
-        const percent =
-            Math.min(
-                count * 5,
-                100
-            );
-
-        document.getElementById("progressBar")
-            .style.width =
-            percent + "%";
     }
 });
 
@@ -370,7 +223,6 @@ onValue(
             .textContent =
             Number(data.yaw)
             .toFixed(1);
-
     }
 );
 
@@ -397,6 +249,5 @@ onValue(
             .textContent =
             Number(data.z)
             .toFixed(2);
-
     }
 );
