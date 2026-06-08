@@ -48,6 +48,7 @@
            </div>
            <div style="padding: 15px 0; display: flex; flex-direction: column; gap: 8px;">
                <p>Current Set : <span id="currentSet" style="font-weight: 600; color: var(--primary);">1</span></p>
+               <p>Count : <span id="count" style="font-weight: 600; color: var(--success); font-size: 1.2rem;">0</span> ครั้ง</p>
                <p>Time : <span id="timer" style="font-weight: 600; color: var(--danger);">0 s</span></p>
            </div>
            <div class="control-actions" style="padding: 0; border: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -108,7 +109,7 @@
    <main class="viewport-area">
        <div class="card model-card">
            <div class="card-header space-between">
-               <h2>🧍‍♂️ 3D Model</h2>
+               <h2>🧍‍♂️ 3D Model View</h2>
                <div class="view-controls">
                    <button class="view-btn" id="view-front">Front</button>
                    <button class="view-btn" id="view-side">Side</button>
@@ -126,7 +127,7 @@
 <section class="analytics-area">
    <div class="card chart-card">
        <div class="card-header">
-           <h2>📊 Rehab Progress</h2>
+           <h2>📊 Rehab Progress Chart</h2>
        </div>
        <div class="chart-container">
            <canvas id="chart"></canvas>
@@ -139,16 +140,6 @@
 </footer>
 
 <script type="module" src="app.js"></script>
-
-<script>
-   if ('serviceWorker' in navigator) {
-       window.addEventListener('load', () => {
-           navigator.serviceWorker.register('/service-worker.js').catch(err => {
-               console.log('Service Worker registration skipped or failed: ', err);
-           });
-       });
-   }
-</script>
 
 <div class="mobile-display">
    <div class="indicator-container">
