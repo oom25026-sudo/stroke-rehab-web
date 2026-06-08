@@ -1,8 +1,8 @@
 // ==========================================
-// 1. FIREBASE REALTIME DATABASE SETUP
+// 1. FIREBASE REALTIME DATABASE CONFIGURATION
 // ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBdcc-uTdG3bwpwOmW2104T_pmb4zM6OPs",
@@ -16,9 +16,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const sensorRef = ref(db, "rehab_session");
 
 // ==========================================
-// 2. THREE.JS SCENE SETUP (โมเดล 3D)
+// 2. THREE.JS SETUP (สำหรับคอมพิวเตอร์และเว็บหลัก)
 // ==========================================
 const container = document.getElementById("scene-container");
 const scene = new THREE.Scene();
@@ -48,11 +49,11 @@ loader.load(
    "models/phone.glb",
    (gltf) => { phoneGroup.add(gltf.scene); },
    undefined,
-   (err) => console.error("โหลดโมเดลไม่ขึ้น:", err)
+   (err) => console.error("3D Model load error:", err)
 );
 
 // ==========================================
-// 3. STATE & REHAB CONTROL VARIABLES
+// 3. GLOBAL VARIABLES & FILTERS
 // ==========================================
 let training = false;
 let startTime = 0;
@@ -63,66 +64,130 @@ let count = 0;
 let armUp = false;
 let results = [];
 
-// ค่าสำหรับระบบตัวกรองสัญญาณ Low-Pass Filter
+// ตัวแปรเก็บค่าองศาและความเร่งแบบเรียลไทม์
 let roll = 0, pitch = 0, yaw = 0;
+let ax = 0, ay = 0, az = 0;
 let offsetRoll = 0, offsetPitch = 0, offsetYaw = 0;
-let filteredRoll = 0, filteredPitch = 0, filteredYaw = 0;
+
+let currentRoll = 0, currentPitch = 0, currentYaw = 0;
+let currentAx = 0, currentAy = 0, currentAz = 0;
 
 const FILTER_ALPHA = 0.25;         
 const ORIENTATION_THRESHOLD = 0.2; 
-
-let q = [1.0, 0.0, 0.0, 0.0]; // สำหรับสัญญาน Madgwick Filter
+const MOTION_THRESHOLD = 0.03;
 
 // ==========================================
-// 4. RECEIVE & PROCESS SENSOR DATA (รวมระบบกรอง + นับครั้ง + Firebase)
+// 4. ฝั่งคอมพิวเตอร์: รอรับค่าจาก FIREBASE (Real-time Listener)
 // ==========================================
-function receiveSensorData(data) {
-   let rawRoll = (data.roll ?? 0) - offsetRoll;
-   let rawPitch = (data.pitch ?? 0) - offsetPitch;
-   let rawYaw = (data.yaw ?? 0) - offsetYaw;
+// ฟังก์ชันนี้จะทำงานทันทีเมื่อโทรศัพท์ขยับแล้วอัปเดตข้อมูลขึ้น Firebase
+onValue(sensorRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
 
-   // คำนวณสัญญาณผ่านตัวกรอง Low-Pass Filter
-   const nextRoll = filteredRoll + FILTER_ALPHA * (rawRoll - filteredRoll);
-   const nextPitch = filteredPitch + FILTER_ALPHA * (rawPitch - filteredPitch);
-   const nextYaw = filteredYaw + FILTER_ALPHA * (rawYaw - filteredYaw);
+    // ดึงค่าองศาและความเร่งลงมาแสดงผลที่คอมพิวเตอร์
+    roll = data.roll ?? 0;
+    pitch = data.pitch ?? 0;
+    yaw = data.yaw ?? 0;
+    ax = data.ax ?? 0;
+    ay = data.ay ?? 0;
+    az = data.az ?? 0;
+    count = data.count ?? 0;
+    training = data.training ?? false;
 
-   let isMoving = false;
-   if (Math.abs(nextRoll - filteredRoll) > ORIENTATION_THRESHOLD) { filteredRoll = nextRoll; isMoving = true; }
-   if (Math.abs(nextPitch - filteredPitch) > ORIENTATION_THRESHOLD) { filteredPitch = nextPitch; isMoving = true; }
-   if (Math.abs(nextYaw - filteredYaw) > ORIENTATION_THRESHOLD) { filteredYaw = nextYaw; isMoving = true; }
+    // อัปเดตตัวเลขที่แน่ชัดบนหน้าจอคอมพิวเตอร์
+    document.getElementById("roll").textContent = roll.toFixed(1);
+    document.getElementById("pitch").textContent = pitch.toFixed(1);
+    document.getElementById("yaw").textContent = yaw.toFixed(1);
+    
+    document.getElementById("ax").textContent = ax.toFixed(2);
+    document.getElementById("ay").textContent = ay.toFixed(2);
+    document.getElementById("az").textContent = az.toFixed(2);
+    
+    document.getElementById("count").textContent = count;
 
-   roll = filteredRoll;
-   pitch = filteredPitch;
-   yaw = filteredYaw;
+    // วาดกราฟความคืบหน้าและอัปเดตแถบบนมือถือ
+    updateChart();
+    updateMobileIndicator(roll, pitch);
+});
 
-   // อัปเดตข้อมูลบนแดชบอร์ดหน้าจอ
-   document.getElementById("roll").innerText = roll.toFixed(1);
-   document.getElementById("pitch").innerText = pitch.toFixed(1);
-   document.getElementById("yaw").innerText = yaw.toFixed(1);
-   
-   updateChart();
-   updateMobileIndicator(roll, pitch);
+// ==========================================
+// 5. ฝั่งโทรศัพท์: อัปเดตค่าจากอุปกรณ์ขึ้น FIREBASE
+// ==========================================
+function initMobileSensor() {
+    // 5.1 ตรวจจับมุมและการหมุน (DeviceOrientation)
+    window.addEventListener("deviceorientation", (event) => {
+        if (!training) return;
 
-   // อัปเดตข้อมูลและส่งขึ้นฐานข้อมูล Firebase (ทำงานเมื่อกด Start เท่านั้น)
-   if (training && isMoving) {
-       set(ref(db, "sensor"), {
-           roll: parseFloat(roll.toFixed(1)),
-           pitch: parseFloat(pitch.toFixed(1)),
-           yaw: parseFloat(yaw.toFixed(1)),
-           count: count,
-           timestamp: Date.now()
-       });
-   }
+        let rawRoll = (event.gamma || 0) - offsetRoll;
+        let rawPitch = (event.beta || 0) - offsetPitch;
+        let rawYaw = (event.alpha || 0) - offsetYaw;
+
+        // คำนวณผ่านสัญญาณ Low-Pass Filter ค่านิ่งเสถียร
+        const nextRoll = currentRoll + FILTER_ALPHA * (rawRoll - currentRoll);
+        const nextPitch = currentPitch + FILTER_ALPHA * (rawPitch - currentPitch);
+        const nextYaw = currentYaw + FILTER_ALPHA * (rawYaw - currentYaw);
+
+        if (Math.abs(nextRoll - currentRoll) > ORIENTATION_THRESHOLD) currentRoll = nextRoll;
+        if (Math.abs(nextPitch - currentPitch) > ORIENTATION_THRESHOLD) currentPitch = nextPitch;
+        if (Math.abs(nextYaw - currentYaw) > ORIENTATION_THRESHOLD) currentYaw = nextYaw;
+
+        // อัปเดตค่ายิงขึ้นคลาวด์ Firebase เพื่อส่งให้คอมพิวเตอร์
+        set(sensorRef, {
+            roll: currentRoll,
+            pitch: currentPitch,
+            yaw: currentYaw,
+            ax: currentAx,
+            ay: currentAy,
+            az: currentAz,
+            count: count,
+            training: training,
+            timestamp: Date.now()
+        });
+    });
+
+    // 5.2 ตรวจจับความเร่งและการนับครั้ง (DeviceMotion)
+    window.addEventListener("devicemotion", (event) => {
+        if (!training) return;
+
+        const acc = event.accelerationIncludingGravity;
+        if (!acc) return;
+
+        const rawAx = acc.x || 0;
+        const rawAy = acc.y || 0;
+        const rawAz = acc.z || 0;
+
+        const nextAx = currentAx + FILTER_ALPHA * (rawAx - currentAx);
+        const nextAy = currentAy + FILTER_ALPHA * (rawAy - currentAy);
+        const nextAz = currentAz + FILTER_ALPHA * (rawAz - currentAz);
+
+        if (Math.abs(nextAx - currentAx) > MOTION_THRESHOLD) currentAx = nextAx;
+        if (Math.abs(nextAy - currentAy) > MOTION_THRESHOLD) currentAy = nextAy;
+        if (Math.abs(nextAz - currentAz) > MOTION_THRESHOLD) currentAz = nextAz;
+
+        // ตรรกะนับครั้ง (Counting Logic จากแกน Y)
+        if (currentAy > 7.0 && !armUp) {
+            armUp = true;
+            const statusLabel = document.getElementById("m-arm-status");
+            if (statusLabel) statusLabel.textContent = "ยกแขนขึ้น ⬆️";
+        }
+        if (currentAy < 3.0 && armUp) {
+            count++;
+            armUp = false;
+            const statusLabel = document.getElementById("m-arm-status");
+            if (statusLabel) statusLabel.textContent = "หย่อนแขนลง ⬇️";
+        }
+    });
 }
 
 // ==========================================
-// 5. BUTTON ACTIONS (START, STOP, RESET, SAVE, CSV)
+// 6. ปุ่มควบคุมระบบการฝึก (TRAINING ACTIONS)
 // ==========================================
 document.getElementById("startBtn").onclick = async () => {
     if (training) return;
     training = true;
     startTime = Date.now();
 
+    // ขออนุญาตเข้าถึงเซนเซอร์สำหรับระบบ iOS
     if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
         try { await DeviceMotionEvent.requestPermission(); } catch (e) {}
     }
@@ -132,53 +197,50 @@ document.getElementById("startBtn").onclick = async () => {
         const sec = Math.floor((Date.now() - startTime) / 1000);
         document.getElementById("timer").textContent = sec + " s";
     }, 1000);
+
+    // Sync สถานะการเริ่มฝึกขึ้น Firebase
+    set(sensorRef, { training: true, count: count, roll: roll, pitch: pitch, yaw: yaw });
 };
 
 document.getElementById("stopBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
+    set(sensorRef, { training: false, count: count, roll: roll, pitch: pitch, yaw: yaw });
 };
 
 document.getElementById("resetBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 
-    count = 0;
-    armUp = false;
-    currentSet = 1;
-    results = [];
-    filteredRoll = 0; filteredPitch = 0; filteredYaw = 0;
-    roll = 0; pitch = 0; yaw = 0;
+    count = 0; armUp = false; currentSet = 1; results = [];
+    currentRoll = 0; currentPitch = 0; currentYaw = 0;
+    currentAx = 0; currentAy = 0; currentAz = 0;
 
     document.getElementById("count").textContent = "0";
     document.getElementById("timer").textContent = "0 s";
     document.getElementById("currentSet").textContent = "1";
     document.getElementById("resultArea").innerHTML = "";
-    document.getElementById("roll").textContent = "0.0";
-    document.getElementById("pitch").textContent = "0.0";
-    document.getElementById("yaw").textContent = "0.0";
+
+    // ล้างค่าในฐานข้อมูลเริ่มต้นใหม่
+    set(sensorRef, { training: false, count: 0, roll: 0, pitch: 0, yaw: 0, ax: 0, ay: 0, az: 0 });
 };
 
 document.getElementById("saveSetBtn").onclick = () => {
     if (!startTime) return;
     const sec = Math.floor((Date.now() - startTime) / 1000);
 
-    // บันทึกทั้งรอบเซต จำนวนครั้ง และเวลาที่ใช้
     results.push({ set: currentSet, count: count, time: sec });
     showResults();
 
     currentSet++;
     document.getElementById("currentSet").textContent = currentSet;
     
-    // รีเซ็ตค่านับรอบใหม่ในแต่ละเซตข้อมูล
+    // เคลียร์ค่านับใหม่ในเซตถัดไป
     count = 0;
     armUp = false;
     document.getElementById("count").textContent = "0";
     document.getElementById("timer").textContent = "0 s";
-    
-    if (training) {
-        startTime = Date.now();
-    }
+    if (training) startTime = Date.now();
 };
 
 document.getElementById("downloadBtn").onclick = () => {
@@ -188,89 +250,32 @@ document.getElementById("downloadBtn").onclick = () => {
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "rehab_comprehensive_results.csv";
+    a.download = "rehab_realtime_results.csv";
     a.click();
 };
 
 function showResults() {
     let html = "";
     results.forEach(r => { 
-        html += `<p style="margin:4px 0;">Set ${r.set} : ทำได้ ${r.count} ครั้งในเวลา ${r.time} วินาที</p>`; 
+        html += `<p style="margin:4px 0;">Set ${r.set} : ทำได้ ${r.count} ครั้ง ขยับ ${r.time} วินาที</p>`; 
     });
     document.getElementById("resultArea").innerHTML = html;
 }
 
-// ==========================================
-// 6. MOTION SENSOR & COUNTING LOGIC (นับครั้งจากการขยับแกน Y)
-// ==========================================
-document.getElementById('btn-connect').addEventListener('click', async () => {
-   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-       const permission = await DeviceMotionEvent.requestPermission();
-       if (permission === 'granted') initMobileSensor();
-   } else {
-       initMobileSensor();
-   }
-});
-
+// ปุ่มเชื่อมต่อและเซ็ตระนาบศูนย์
+document.getElementById('btn-connect').addEventListener('click', () => { initMobileSensor(); });
 document.getElementById('btn-tare').addEventListener('click', () => {
-   offsetRoll = roll + offsetRoll;
-   offsetPitch = pitch + offsetPitch;
-   offsetYaw = yaw + offsetYaw;
+   offsetRoll = currentRoll + offsetRoll;
+   offsetPitch = currentPitch + offsetPitch;
+   offsetYaw = currentYaw + offsetYaw;
 });
 
-function initMobileSensor() {
-   window.addEventListener('devicemotion', (e) => {
-       const accel = e.accelerationIncludingGravity;
-       const gyro = e.rotationRate;
-       
-       if (accel && gyro) {
-           // 1. ส่งค่าเข้าการประมวลผลตัวกรองท่าทางและโมเดล 3D
-           updateMadgwickFilter(accel.x/9.8, accel.y/9.8, accel.z/9.8, gyro.alpha*Math.PI/180, gyro.beta*Math.PI/180, gyro.gamma*Math.PI/180, 0.01);
-           const angles = getEulerAngles(q);
-           receiveSensorData({ roll: angles.roll, pitch: angles.pitch, yaw: angles.yaw });
-
-           // 2. ระบบตรวจจับการนับจำนวนครั้ง (Counting Logic จากเวอร์ชันแรก)
-           if (!training) return;
-           const ay = accel.y || 0;
-
-           if (ay > 7 && !armUp) {
-               armUp = true;
-           }
-           if (ay < 3 && armUp) {
-               count++;
-               armUp = false;
-               document.getElementById("count").textContent = count;
-               
-               // ส่งข้อมูลอัปเดตจำนวนครั้งแบบ Realtime ขึ้น Firebase ทันทีที่นับเพิ่ม
-               set(ref(db, "sensor/total_count"), count);
-           }
-       }
-   });
-}
-
-function updateMadgwickFilter(ax, ay, az, gx, gy, gz, dt) {
-   let qDot1 = 0.5 * (-q[1]*gx - q[2]*gy - q[3]*gz);
-   let qDot2 = 0.5 * (q[0]*gx + q[2]*gz - q[3]*gy);
-   let qDot3 = 0.5 * (q[0]*gy - q[1]*gz + q[3]*gx);
-   let qDot4 = 0.5 * (q[0]*gz + q[1]*gy - q[2]*gx);
-   q[0] += qDot1*dt; q[1] += qDot2*dt; q[2] += qDot3*dt; q[3] += qDot4*dt;
-   const norm = Math.sqrt(q[0]**2 + q[1]**2 + q[2]**2 + q[3]**2);
-   q = q.map(v => v/norm);
-}
-
-function getEulerAngles(q) {
-   return {
-       roll: Math.atan2(2*(q[0]*q[1]+q[2]*q[3]), 1-2*(q[1]**2+q[2]**2)) * (180/Math.PI),
-       pitch: Math.asin(2*(q[0]*q[2]-q[3]*q[1])) * (180/Math.PI),
-       yaw: Math.atan2(2*(q[0]*q[3]+q[1]*q[2]), 1-2*(q[2]**2+q[3]**2)) * (180/Math.PI)
-   };
-}
-
 // ==========================================
-// 7. ANIMATION RENDERING & GRAPH PROGRESS
+// 7. ANIMATION RENDERING & PLOTTING GRAPH
 // ==========================================
 function animate() {
    requestAnimationFrame(animate);
+   // อัปเดตมุมโมเดล 3D บนจอคอมตามค่าองศาที่ได้จาก Firebase แบบเรียลไทม์
    phoneGroup.rotation.set(pitch * Math.PI/180, yaw * Math.PI/180, roll * Math.PI/180);
    renderer.render(scene, camera);
 }
@@ -282,7 +287,7 @@ window.addEventListener("load", () => {
    if (canvas) {
        chart = new Chart(canvas.getContext("2d"), {
            type: "line",
-           data: { labels: [], datasets: [{ label: "Pitch Angle", data: [], borderColor: "#2563eb", fill: true }] },
+           data: { labels: [], datasets: [{ label: "Pitch Angle Trend", data: [], borderColor: "#2563eb", fill: true }] },
            options: { responsive: true, maintainAspectRatio: false }
        });
    }
@@ -296,14 +301,13 @@ function updateChart() {
    chart.update();
 }
 
-// ฟังก์ชันสลับมุมกล้องโมเดล 3D
+// ควบคุมมุมมองกล้อง 3D
 function switchView(view) {
    if (view === 'front') camera.position.set(0, 0, 7);
    if (view === 'side') camera.position.set(7, 0, 0);
    if (view === 'top') camera.position.set(0, 7, 0.01);
    camera.lookAt(0, 0, 0);
 }
-
 document.getElementById('view-front').onclick = () => switchView('front');
 document.getElementById('view-side').onclick = () => switchView('side');
 document.getElementById('view-top').onclick = () => switchView('top');
@@ -316,7 +320,6 @@ setInterval(() => {
 function updateMobileIndicator(r, p) {
    const rollBar = document.getElementById('bar-roll');
    const pitchBar = document.getElementById('bar-pitch');
-  
    if (rollBar) {
        let rPercent = Math.min(Math.max((r + 90) / 1.8, 0), 100);
        rollBar.style.width = rPercent + '%';
@@ -328,6 +331,6 @@ function updateMobileIndicator(r, p) {
    }
 }
 
-// รองรับปุ่มคลิกบน Mobile UI
-document.getElementById('m-btn-connect')?.addEventListener('click', () => { document.getElementById('btn-connect').click(); });
+// รองรับชุดปุ่มสำหรับหน้าจอมือถือเล็ก
+document.getElementById('m-btn-connect')?.addEventListener('click', () => { initMobileSensor(); });
 document.getElementById('m-btn-tare')?.addEventListener('click', () => { document.getElementById('btn-tare').click(); });
