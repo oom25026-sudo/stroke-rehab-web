@@ -1,84 +1,39 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Digital Twin Dashboard</title>
-
-<link rel="stylesheet" href="style.css">
-
-<script type="module" src="app.js"></script>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script defer src="app.js"></script>
 </head>
 <body>
 
 <div class="container">
 
-<h1>Digital Twin Dashboard</h1>
+    <h1>Digital Twin Dashboard</h1>
 
-<div class="card">
+    <div class="card">
+        <h2>Training Control</h2>
+        <p>Time : <span id="timer">0 s</span></p>
+        <button id="startBtn">Start</button>
+        <button id="stopBtn">Stop</button>
+        <button id="resetBtn">Reset</button>
+    </div>
 
-<h2>Training Control</h2>
+    <div class="card">
+        <h2>Orientation</h2>
+        <p>Roll : <span id="roll">0</span>°</p>
+        <p>Pitch : <span id="pitch">0</span>°</p>
+        <p>Yaw : <span id="yaw">0</span>°</p>
+    </div>
 
-<p>Current Set : <span id="currentSet">1</span></p>
-<p>Count : <span id="count">0</span></p>
-<p>Time : <span id="timer">0 s</span></p>
-
-<button id="startBtn">Start</button>
-<button id="stopBtn">Stop</button>
-<button id="resetBtn">Reset</button>
-<button id="saveSetBtn">Save Set</button>
-<button id="downloadBtn">Download CSV</button>
-
-</div>
-
-<div class="card">
-
-<h2>Orientation</h2>
-
-<p>Roll : <span id="roll">0</span>°</p>
-<p>Pitch : <span id="pitch">0</span>°</p>
-<p>Yaw : <span id="yaw">0</span>°</p>
-
-</div>
-
-<div class="card">
-
-<h2>Accelerometer</h2>
-
-<p>X : <span id="ax">0</span></p>
-<p>Y : <span id="ay">0</span></p>
-<p>Z : <span id="az">0</span></p>
-
-</div>
-
-<div class="card">
-
-<h2>Progress</h2>
-
-<div class="progress">
-<div id="progressBar"></div>
-</div>
-
-</div>
-
-<div class="card">
-
-<h2>Training Results</h2>
-
-<div id="resultArea"></div>
-
-</div>
-
-<div class="card">
-
-<h2>3D Model</h2>
-
-<div id="viewer">
-Male Fighter.glb
-</div>
-
-</div>
+    <div class="card">
+        <h2>Accelerometer</h2>
+        <p>X : <span id="ax">0</span></p>
+        <p>Y : <span id="ay">0</span></p>
+        <p>Z : <span id="az">0</span></p>
+    </div>
 
 </div>
 
