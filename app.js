@@ -1,8 +1,9 @@
-// 1. นำเข้าโมดูล Firebase สำหรับเชื่อมต่อ Realtime Database
+// ==========================================
+// 0. FIREBASE REALTIME DATABASE SETUP
+// ==========================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-// 2. ตั้งค่า Firebase Config ของระบบคุณ
 const firebaseConfig = {
     apiKey: "AIzaSyBdcc-uTdG3bwpwOmW2104T_pmb4zM6OPs",
     authDomain: "stroke-rehab-eec16.firebaseapp.com",
@@ -13,42 +14,116 @@ const firebaseConfig = {
     appId: "1:606765795152:web:48a431ab1dfa19a7850e55"
 };
 
-// เริ่มต้นทำงาน Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
+// ==========================================
+// 1. THREE.JS SCENE SETUP
+// ==========================================
+const container = document.getElementById("scene-container");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf8fafc);
+
+const camera = new THREE.PerspectiveCamera(40, container.clientWidth / 400, 0.1, 1000);
+camera.position.set(0, 0, 7);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, 400);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+container.appendChild(renderer.domElement);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 2.2);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 3.0);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+
+// ==========================================
+// 2. LOAD 3D MODEL
+// ==========================================
+let phoneGroup = new THREE.Group();
+phoneGroup.rotation.order = 'YXZ';
+scene.add(phoneGroup);
+
+const loader = new THREE.GLTFLoader();
+loader.load(
+   "models/phone.glb",
+   (gltf) => { phoneGroup.add(gltf.scene); },
+   undefined,
+   (err) => console.error("โหลดโมเดลไม่ขึ้น:", err)
+);
+
+// ==========================================
+// 3. STATE & SENSOR LOGIC (Low-Pass Filter & Training)
+// ==========================================
+let roll = 0, pitch = 0, yaw = 0;
+let offsetRoll = 0, offsetPitch = 0, offsetYaw = 0;
+let isTrackingRealSensor = false;
+let q = [1.0, 0.0, 0.0, 0.0];
+const beta = 0.1;
+
+// ระบบควบคุมเซตและเวลาฝึก
 let training = false;
 let startTime = 0;
 let timerInterval;
-
-// --- สำหรับเก็บผลลัพธ์การฝึก (Training Results) ---
 let currentSet = 1;
 let results = [];
 
-// --- ระบบตัวกรองสัญญาณ (Low-Pass Filter) เพื่อให้ค่านิ่งและเรียลไทม์ ---
-let currentRoll = 0, currentPitch = 0, currentYaw = 0;
-let currentAx = 0, currentAy = 0, currentAz = 0;
+// ตัวแปรสำหรับ Low-Pass Filter ค่านิ่งเสถียร
+let filteredRoll = 0, filteredPitch = 0, filteredYaw = 0;
+const FILTER_ALPHA = 0.25;         // ค่าความไวการตอบสนอง
+const ORIENTATION_THRESHOLD = 0.2;  // ล็อกค่านิ่งเมื่อขยับต่ำกว่ากำหนด
 
-const FILTER_ALPHA = 0.25;        // ค่าความสมูทแบบตอบสนองไว (Real-time)
-const ORIENTATION_THRESHOLD = 0.2; // เกณฑ์ล็อกค่านิ่งของมุม
-const MOTION_THRESHOLD = 0.03;      // เกณฑ์ล็อกค่านิ่งของความเร่ง
-// -----------------------------------------------------------
+function receiveSensorData(data) {
+   let rawRoll = (data.roll ?? 0) - offsetRoll;
+   let rawPitch = (data.pitch ?? 0) - offsetPitch;
+   let rawYaw = (data.yaw ?? 0) - offsetYaw;
 
-/* ==========================
-   START
-========================== */
+   // คำนวณผ่านสัญญาณ Low-pass filter
+   const nextRoll = filteredRoll + FILTER_ALPHA * (rawRoll - filteredRoll);
+   const nextPitch = filteredPitch + FILTER_ALPHA * (rawPitch - filteredPitch);
+   const nextYaw = filteredYaw + FILTER_ALPHA * (rawYaw - filteredYaw);
+
+   let isMoving = false;
+   if (Math.abs(nextRoll - filteredRoll) > ORIENTATION_THRESHOLD) { filteredRoll = nextRoll; isMoving = true; }
+   if (Math.abs(nextPitch - filteredPitch) > ORIENTATION_THRESHOLD) { filteredPitch = nextPitch; isMoving = true; }
+   if (Math.abs(nextYaw - filteredYaw) > ORIENTATION_THRESHOLD) { filteredYaw = nextYaw; isMoving = true; }
+
+   roll = filteredRoll;
+   pitch = filteredPitch;
+   yaw = filteredYaw;
+
+   // แสดงผลบนหน้าเว็บแดชบอร์ด
+   document.getElementById("roll").innerText = roll.toFixed(1);
+   document.getElementById("pitch").innerText = pitch.toFixed(1);
+   document.getElementById("yaw").innerText = yaw.toFixed(1);
+   
+   updateChart();
+   updateMobileIndicator(roll, pitch);
+
+   // ส่งค่าขึ้นไปยังฐานข้อมูล Firebase Realtime Database แบบเรียลไทม์ (ส่งเฉพาะเมื่อเปิดปุ่มระบบ Start)
+   if (training && isMoving) {
+       set(ref(db, "sensor"), {
+           roll: parseFloat(roll.toFixed(1)),
+           pitch: parseFloat(pitch.toFixed(1)),
+           yaw: parseFloat(yaw.toFixed(1)),
+           timestamp: Date.now()
+       });
+   }
+}
+
+// ==========================================
+// 4. TRAINING CONTROL BUTTON ACTIONS
+// ==========================================
 document.getElementById("startBtn").onclick = async () => {
     if (training) return;
     training = true;
     startTime = Date.now();
 
-    if (
-        typeof DeviceMotionEvent !== "undefined" &&
-        typeof DeviceMotionEvent.requestPermission === "function"
-    ) {
-        try {
-            await DeviceMotionEvent.requestPermission();
-        } catch (e) {}
+    // ดึงสิทธิ์ใช้งานตัวเซนเซอร์ของมือถือ iOS/Android
+    if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") {
+        try { await DeviceMotionEvent.requestPermission(); } catch (e) {}
     }
 
     clearInterval(timerInterval);
@@ -58,51 +133,33 @@ document.getElementById("startBtn").onclick = async () => {
     }, 1000);
 };
 
-/* ==========================
-   STOP
-========================== */
 document.getElementById("stopBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 };
 
-/* ==========================
-   RESET
-========================== */
 document.getElementById("resetBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 
-    // รีเซ็ตค่าตัวกรองและชุดข้อมูล
-    currentRoll = 0; currentPitch = 0; currentYaw = 0;
-    currentAx = 0; currentAy = 0; currentAz = 0;
-    
+    filteredRoll = 0; filteredPitch = 0; filteredYaw = 0;
+    roll = 0; pitch = 0; yaw = 0;
     currentSet = 1;
     results = [];
 
     document.getElementById("timer").textContent = "0 s";
     document.getElementById("currentSet").textContent = "1";
     document.getElementById("resultArea").innerHTML = "";
-    
     document.getElementById("roll").textContent = "0.0";
     document.getElementById("pitch").textContent = "0.0";
     document.getElementById("yaw").textContent = "0.0";
-    document.getElementById("ax").textContent = "0.00";
-    document.getElementById("ay").textContent = "0.00";
-    document.getElementById("az").textContent = "0.00";
 };
 
-/* ==========================
-   SAVE SET
-========================== */
 document.getElementById("saveSetBtn").onclick = () => {
+    if (!startTime) return;
     const sec = Math.floor((Date.now() - startTime) / 1000);
 
-    results.push({
-        set: currentSet,
-        time: sec
-    });
-
+    results.push({ set: currentSet, time: sec });
     showResults();
 
     currentSet++;
@@ -114,101 +171,139 @@ document.getElementById("saveSetBtn").onclick = () => {
     }
 };
 
-/* ==========================
-   DOWNLOAD CSV
-========================== */
 document.getElementById("downloadBtn").onclick = () => {
     let csv = "Set,Time(s)\n";
-
-    results.forEach(r => {
-        csv += `${r.set},${r.time}\n`;
-    });
+    results.forEach(r => { csv += `${r.set},${r.time}\n`; });
 
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
-
     a.href = URL.createObjectURL(blob);
-    a.download = "training_results.csv";
+    a.download = "rehab_training_results.csv";
     a.click();
 };
 
-/* ==========================
-   SHOW RESULTS
-========================== */
 function showResults() {
     let html = "";
-    results.forEach(r => {
-        html += `<p>Set ${r.set} : ${r.time} วินาที</p>`;
-    });
+    results.forEach(r => { html += `<p style="margin:4px 0;">Set ${r.set} : ${r.time} วินาที</p>`; });
     document.getElementById("resultArea").innerHTML = html;
 }
 
-/* ==========================
-   ORIENTATION (Roll, Pitch, Yaw) - REAL-TIME & FIREBASE
-========================== */
-window.addEventListener("deviceorientation", (event) => {
-    if (!training) return;
-
-    const roll = event.gamma || 0;
-    const pitch = event.beta || 0;
-    const yaw = event.alpha || 0;
-
-    const nextRoll = currentRoll + FILTER_ALPHA * (roll - currentRoll);
-    const nextPitch = currentPitch + FILTER_ALPHA * (pitch - currentPitch);
-    const nextYaw = currentYaw + FILTER_ALPHA * (yaw - currentYaw);
-
-    let isMoving = false;
-    if (Math.abs(nextRoll - currentRoll) > ORIENTATION_THRESHOLD) { currentRoll = nextRoll; isMoving = true; }
-    if (Math.abs(nextPitch - currentPitch) > ORIENTATION_THRESHOLD) { currentPitch = nextPitch; isMoving = true; }
-    if (Math.abs(nextYaw - currentYaw) > ORIENTATION_THRESHOLD) { currentYaw = nextYaw; isMoving = true; }
-
-    if (isMoving) {
-        document.getElementById("roll").textContent = currentRoll.toFixed(1);
-        document.getElementById("pitch").textContent = currentPitch.toFixed(1);
-        document.getElementById("yaw").textContent = currentYaw.toFixed(1);
-
-        // อัปเดตขึ้น Firebase Realtime Database
-        set(ref(db, "sensor"), {
-            roll: parseFloat(currentRoll.toFixed(1)),
-            pitch: parseFloat(currentPitch.toFixed(1)),
-            yaw: parseFloat(currentYaw.toFixed(1)),
-            timestamp: Date.now()
-        });
-    }
+// ==========================================
+// 5. MOBILE CONNECT & TARE
+// ==========================================
+document.getElementById('btn-connect').addEventListener('click', async () => {
+   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+       const permission = await DeviceMotionEvent.requestPermission();
+       if (permission === 'granted') initMobileSensor();
+   } else {
+       initMobileSensor();
+   }
 });
 
-/* ==========================
-   ACCELEROMETER (X, Y, Z) - REAL-TIME & FIREBASE
-========================== */
-window.addEventListener("devicemotion", (event) => {
-    if (!training) return;
+document.getElementById('btn-tare').addEventListener('click', () => {
+   offsetRoll = roll + offsetRoll;
+   offsetPitch = pitch + offsetPitch;
+   offsetYaw = yaw + offsetYaw;
+});
 
-    const acc = event.accelerationIncludingGravity;
-    if (!acc) return;
+function initMobileSensor() {
+   isTrackingRealSensor = true;
+   window.addEventListener('devicemotion', (e) => {
+       const accel = e.accelerationIncludingGravity;
+       const gyro = e.rotationRate;
+       if(accel && gyro) {
+           updateMadgwickFilter(accel.x/9.8, accel.y/9.8, accel.z/9.8, gyro.alpha*Math.PI/180, gyro.beta*Math.PI/180, gyro.gamma*Math.PI/180, 0.01);
+           const angles = getEulerAngles(q);
+           receiveSensorData({ roll: angles.roll, pitch: angles.pitch, yaw: angles.yaw });
+       }
+   });
+}
 
-    const ax = acc.x || 0;
-    const ay = acc.y || 0;
-    const az = acc.z || 0;
+function updateMadgwickFilter(ax, ay, az, gx, gy, gz, dt) {
+   let qDot1 = 0.5 * (-q[1]*gx - q[2]*gy - q[3]*gz);
+   let qDot2 = 0.5 * (q[0]*gx + q[2]*gz - q[3]*gy);
+   let qDot3 = 0.5 * (q[0]*gy - q[1]*gz + q[3]*gx);
+   let qDot4 = 0.5 * (q[0]*gz + q[1]*gy - q[2]*gx);
+   q[0] += qDot1*dt; q[1] += qDot2*dt; q[2] += qDot3*dt; q[3] += qDot4*dt;
+   const norm = Math.sqrt(q[0]**2 + q[1]**2 + q[2]**2 + q[3]**2);
+   q = q.map(v => v/norm);
+}
 
-    const nextAx = currentAx + FILTER_ALPHA * (ax - currentAx);
-    const nextAy = currentAy + FILTER_ALPHA * (ay - currentAy);
-    const nextAz = currentAz + FILTER_ALPHA * (az - currentAz);
+function getEulerAngles(q) {
+   return {
+       roll: Math.atan2(2*(q[0]*q[1]+q[2]*q[3]), 1-2*(q[1]**2+q[2]**2)) * (180/Math.PI),
+       pitch: Math.asin(2*(q[0]*q[2]-q[3]*q[1])) * (180/Math.PI),
+       yaw: Math.atan2(2*(q[0]*q[3]+q[1]*q[2]), 1-2*(q[2]**2+q[3]**2)) * (180/Math.PI)
+   };
+}
 
-    let isMoving = false;
-    if (Math.abs(nextAx - currentAx) > MOTION_THRESHOLD) { currentAx = nextAx; isMoving = true; }
-    if (Math.abs(nextAy - currentAy) > MOTION_THRESHOLD) { currentAy = nextAy; isMoving = true; }
-    if (Math.abs(nextAz - currentAz) > MOTION_THRESHOLD) { currentAz = nextAz; isMoving = true; }
+// ==========================================
+// 6. ANIMATION LOOP & CHARTS
+// ==========================================
+function animate() {
+   requestAnimationFrame(animate);
+   phoneGroup.rotation.set(pitch * Math.PI/180, yaw * Math.PI/180, roll * Math.PI/180);
+   renderer.render(scene, camera);
+}
+animate();
 
-    if (isMoving) {
-        document.getElementById("ax").textContent = currentAx.toFixed(2);
-        document.getElementById("ay").textContent = currentAy.toFixed(2);
-        document.getElementById("az").textContent = currentAz.toFixed(2);
+let chart = null;
+window.addEventListener("load", () => {
+   const canvas = document.getElementById("chart");
+   if (canvas) {
+       chart = new Chart(canvas.getContext("2d"), {
+           type: "line",
+           data: { labels: [], datasets: [{ label: "Pitch", data: [], borderColor: "#2563eb", fill: true }] },
+           options: { responsive: true, maintainAspectRatio: false }
+       });
+   }
+});
 
-        // อัปเดตขึ้น Firebase Realtime Database
-        set(ref(db, "accelerometer"), {
-            x: parseFloat(currentAx.toFixed(2)),
-            y: parseFloat(currentAy.toFixed(2)),
-            z: parseFloat(currentAz.toFixed(2))
-        });
-    }
+function updateChart() {
+   if (!chart) return;
+   chart.data.labels.push(new Date().toLocaleTimeString().slice(-8));
+   chart.data.datasets[0].data.push(pitch);
+   if (chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+   chart.update();
+}
+
+// ฟังก์ชันสลับมุมกล้อง 3D
+function switchView(view) {
+   if (view === 'front') camera.position.set(0, 0, 7);
+   if (view === 'side') camera.position.set(7, 0, 0);
+   if (view === 'top') camera.position.set(0, 7, 0.01);
+   camera.lookAt(0, 0, 0);
+}
+
+document.getElementById('view-front').onclick = () => switchView('front');
+document.getElementById('view-side').onclick = () => switchView('side');
+document.getElementById('view-top').onclick = () => switchView('top');
+
+setInterval(() => {
+   const clock = document.getElementById("live-clock");
+   if(clock) clock.innerText = new Date().toLocaleTimeString();
+}, 1000);
+
+function updateMobileIndicator(r, p) {
+   const rollBar = document.getElementById('bar-roll');
+   const pitchBar = document.getElementById('bar-pitch');
+  
+   if (rollBar) {
+       let rPercent = Math.min(Math.max((r + 90) / 1.8, 0), 100);
+       rollBar.style.width = rPercent + '%';
+       rollBar.style.background = (Math.abs(r) > 45) ? '#ef4444' : '#38bdf8';
+   }
+  
+   if (pitchBar) {
+       let pPercent = Math.min(Math.max((p + 90) / 1.8, 0), 100);
+       pitchBar.style.width = pPercent + '%';
+   }
+}
+
+// ดักจับการทำงานสำหรับปุ่ม Mobile View
+document.getElementById('m-btn-connect')?.addEventListener('click', () => {
+   document.getElementById('btn-connect').click();
+});
+document.getElementById('m-btn-tare')?.addEventListener('click', () => {
+   document.getElementById('btn-tare').click();
 });
