@@ -2,20 +2,40 @@ let training = false;
 let startTime = 0;
 let timerInterval;
 
-
 // --- สำหรับเก็บผลลัพธ์การฝึก (Training Results) ---
 let currentSet = 1;
 let results = [];
 
+// --- ระบบตัวกรองสัญญาณแบบ Moving Average + Threshold เพื่อให้นิ่งสนิท ---
+const WINDOW_SIZE = 12;            // จำนวนข้อมูลที่จะนำมาเฉลี่ย (ยิ่งเยอะยิ่งนิ่ง แต่จะหน่วงขึ้นเล็กน้อย)
+const ORIENTATION_THRESHOLD = 0.4; // เกณฑ์ล็อกค่านิ่งของมุม (องศา)
+const MOTION_THRESHOLD = 0.05;     // เกณฑ์ล็อกค่านิ่งของความเร่ง (m/s^2)
 
-// --- ระบบตัวกรองสัญญาณ (Low-Pass Filter) เพื่อให้ค่านิ่งและเรียลไทม์ ---
+// ตัวแปรสำหรับเก็บประจุข้อมูลย้อนหลัง (Queue)
+let historyRoll = [], historyPitch = [], historyYaw = [];
+let historyAx = [], historyAy = [], historyAz = [];
+
+// ตัวแปรสำหรับล็อกค่าปัจจุบันที่แสดงบนหน้าจอ
 let currentRoll = 0, currentPitch = 0, currentYaw = 0;
 let currentAx = 0, currentAy = 0, currentAz = 0;
 
+// ฟังก์ชันสำหรับคำนวณค่าเฉลี่ยเคลื่อนที่
+function getAverage(array, newValue, size) {
+    array.push(newValue);
+    if (array.length > size) {
+        array.shift(); // เอาค่าเก่าสุดออก
+    }
+    const sum = array.reduce((a, b) => a + b, 0);
+    return sum / array.length;
+}
 
-const FILTER_ALPHA = 0.25;        // ค่าความสมูทแบบตอบสนองไว (Real-time)
-const ORIENTATION_THRESHOLD = 0.2; // เกณฑ์ล็อกค่านิ่งของมุม
-const MOTION_THRESHOLD = 0.03;      // เกณฑ์ล็อกค่านิ่งของความเร่ง
+// ฟังก์ชันล้างประวัติการกรอง
+function resetFilterHistory() {
+    historyRoll = []; historyPitch = []; historyYaw = [];
+    historyAx = []; historyAy = []; historyAz = [];
+    currentRoll = 0; currentPitch = 0; currentYaw = 0;
+    currentAx = 0; currentAy = 0; currentAz = 0;
+}
 // -----------------------------------------------------------
 
 
@@ -27,7 +47,6 @@ document.getElementById("startBtn").onclick = async () => {
     training = true;
     startTime = Date.now();
 
-
     if (
         typeof DeviceMotionEvent !== "undefined" &&
         typeof DeviceMotionEvent.requestPermission === "function"
@@ -36,7 +55,6 @@ document.getElementById("startBtn").onclick = async () => {
             await DeviceMotionEvent.requestPermission();
         } catch (e) {}
     }
-
 
     clearInterval(timerInterval);
     timerInterval = setInterval(() => {
@@ -62,14 +80,11 @@ document.getElementById("resetBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 
-
-    // รีเซ็ตค่าตัวกรองและชุดข้อมูล
-    currentRoll = 0; currentPitch = 0; currentYaw = 0;
-    currentAx = 0; currentAy = 0; currentAz = 0;
+    // รีเซ็ตตัวกรองและชุดข้อมูลทั้งหมด
+    resetFilterHistory();
    
     currentSet = 1;
     results = [];
-
 
     document.getElementById("timer").textContent = "0 s";
     document.getElementById("currentSet").textContent = "1";
@@ -90,22 +105,17 @@ document.getElementById("resetBtn").onclick = () => {
 document.getElementById("saveSetBtn").onclick = () => {
     const sec = Math.floor((Date.now() - startTime) / 1000);
 
-
-    // บันทึกเฉพาะเซตและเวลา (ตัด count ออกตามโครงสร้างปัจจุบัน)
     results.push({
         set: currentSet,
         time: sec
     });
 
-
     showResults();
-
 
     currentSet++;
     document.getElementById("currentSet").textContent = currentSet;
     document.getElementById("timer").textContent = "0 s";
    
-    // รีเซ็ตเวลาเริ่มต้นใหม่สำหรับเซตถัดไป
     if (training) {
         startTime = Date.now();
     }
@@ -118,15 +128,12 @@ document.getElementById("saveSetBtn").onclick = () => {
 document.getElementById("downloadBtn").onclick = () => {
     let csv = "Set,Time(s)\n";
 
-
     results.forEach(r => {
         csv += `${r.set},${r.time}\n`;
     });
 
-
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
-
 
     a.href = URL.createObjectURL(blob);
     a.download = "training_results.csv";
@@ -147,27 +154,26 @@ function showResults() {
 
 
 /* ==========================
-   ORIENTATION (Roll, Pitch, Yaw) - REAL-TIME
+   ORIENTATION (Roll, Pitch, Yaw) - REAL-TIME SMA FILTER
 ========================== */
 window.addEventListener("deviceorientation", (event) => {
     if (!training) return;
-
 
     const roll = event.gamma || 0;
     const pitch = event.beta || 0;
     const yaw = event.alpha || 0;
 
+    // 1. กรองด้วย Moving Average
+    const avgRoll = getAverage(historyRoll, roll, WINDOW_SIZE);
+    const avgPitch = getAverage(historyPitch, pitch, WINDOW_SIZE);
+    const avgYaw = getAverage(historyYaw, yaw, WINDOW_SIZE);
 
-    const nextRoll = currentRoll + FILTER_ALPHA * (roll - currentRoll);
-    const nextPitch = currentPitch + FILTER_ALPHA * (pitch - currentPitch);
-    const nextYaw = currentYaw + FILTER_ALPHA * (yaw - currentYaw);
+    // 2. ครอบด้วย Threshold เพื่อล็อกค่านิ่งสนิทตอนไม่ขยับ
+    if (Math.abs(avgRoll - currentRoll) > ORIENTATION_THRESHOLD) currentRoll = avgRoll;
+    if (Math.abs(avgPitch - currentPitch) > ORIENTATION_THRESHOLD) currentPitch = avgPitch;
+    if (Math.abs(avgYaw - currentYaw) > ORIENTATION_THRESHOLD) currentYaw = avgYaw;
 
-
-    if (Math.abs(nextRoll - currentRoll) > ORIENTATION_THRESHOLD) currentRoll = nextRoll;
-    if (Math.abs(nextPitch - currentPitch) > ORIENTATION_THRESHOLD) currentPitch = nextPitch;
-    if (Math.abs(nextYaw - currentYaw) > ORIENTATION_THRESHOLD) currentYaw = nextYaw;
-
-
+    // 3. แสดงผล
     document.getElementById("roll").textContent = currentRoll.toFixed(1);
     document.getElementById("pitch").textContent = currentPitch.toFixed(1);
     document.getElementById("yaw").textContent = currentYaw.toFixed(1);
@@ -175,31 +181,29 @@ window.addEventListener("deviceorientation", (event) => {
 
 
 /* ==========================
-   ACCELEROMETER (X, Y, Z) - REAL-TIME
+   ACCELEROMETER (X, Y, Z) - REAL-TIME SMA FILTER
 ========================== */
 window.addEventListener("devicemotion", (event) => {
     if (!training) return;
 
-
     const acc = event.accelerationIncludingGravity;
     if (!acc) return;
-
 
     const ax = acc.x || 0;
     const ay = acc.y || 0;
     const az = acc.z || 0;
 
+    // 1. กรองด้วย Moving Average
+    const avgAx = getAverage(historyAx, ax, WINDOW_SIZE);
+    const avgAy = getAverage(historyAy, ay, WINDOW_SIZE);
+    const avgAz = getAverage(historyAz, az, WINDOW_SIZE);
 
-    const nextAx = currentAx + FILTER_ALPHA * (ax - currentAx);
-    const nextAy = currentAy + FILTER_ALPHA * (ay - currentAy);
-    const nextAz = currentAz + FILTER_ALPHA * (az - currentAz);
+    // 2. ครอบด้วย Threshold เพื่อล็อกค่านิ่งสนิทตอนไม่ขยับ
+    if (Math.abs(avgAx - currentAx) > MOTION_THRESHOLD) currentAx = avgAx;
+    if (Math.abs(avgAy - currentAy) > MOTION_THRESHOLD) currentAy = avgAy;
+    if (Math.abs(avgAz - currentAz) > MOTION_THRESHOLD) currentAz = avgAz;
 
-
-    if (Math.abs(nextAx - currentAx) > MOTION_THRESHOLD) currentAx = nextAx;
-    if (Math.abs(nextAy - currentAy) > MOTION_THRESHOLD) currentAy = nextAy;
-    if (Math.abs(nextAz - currentAz) > MOTION_THRESHOLD) currentAz = nextAz;
-
-
+    // 3. แสดงผล
     document.getElementById("ax").textContent = currentAx.toFixed(2);
     document.getElementById("ay").textContent = currentAy.toFixed(2);
     document.getElementById("az").textContent = currentAz.toFixed(2);
