@@ -5,52 +5,106 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Twin Dashboard</title>
     <link rel="stylesheet" href="style.css">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Prompt:wght@300;500;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    
     <script defer src="app.js"></script>
 </head>
 <body>
 
-
 <div class="container">
 
+    <header>
+        <h1>Digital Twin Dashboard</h1>
+        <p class="subtitle">Real-time Motion & Orientation Analytics</p>
+    </header>
 
-    <h1>Digital Twin Dashboard</h1>
+    <div class="dashboard-grid">
+        
+        <div class="card control-card">
+            <h2>Training Control</h2>
+            
+            <div class="status-display">
+                <div class="status-box">
+                    <span class="label">Current Set</span>
+                    <span id="currentSet" class="value Highlight">1</span>
+                </div>
+                <div class="status-box">
+                    <span class="label">Time Elapsed</span>
+                    <span id="timer" class="value timer-value">0 s</span>
+                </div>
+            </div>
+           
+            <div class="btn-group main-actions">
+                <button id="startBtn" class="btn btn-start">Start Training</button>
+                <button id="stopBtn" class="btn btn-stop">Stop</button>
+                <button id="resetBtn" class="btn btn-reset">Reset</button>
+            </div>
 
+            <div class="btn-group data-actions">
+                <button id="saveSetBtn" class="btn btn-save">✓ Save Set</button>
+                <button id="downloadBtn" class="btn btn-download">⤓ Download CSV</button>
+            </div>
 
-    <div class="card">
-        <h2>Training Control</h2>
-        <p>Current Set : <span id="currentSet">1</span></p>
-        <p>Time : <span id="timer">0 s</span></p>
-       
-        <button id="startBtn">Start</button>
-        <button id="stopBtn">Stop</button>
-        <button id="resetBtn">Reset</button>
-        <button id="saveSetBtn">Save Set</button>
-        <button id="downloadBtn">Download CSV</button>
+            <div class="results-wrapper">
+                <h3>Training Logs</h3>
+                <div id="resultArea" class="result-area">
+                    <p class="placeholder-text">ยังไม่มีข้อมูลการบันทึกเซต</p>
+                </div>
+            </div>
+        </div>
 
+        <div class="sensor-container">
+            
+            <div class="sensor-tabs">
+                <button id="tabOrientation" class="tab-btn active">Orientation</button>
+                <button id="tabAccelerometer" class="tab-btn">Accelerometer</button>
+            </div>
+            
+            <div id="cardOrientation" class="card sensor-card orientation">
+                <h2>Orientation</h2>
+                <div class="metric-row">
+                    <div class="metric-item">
+                        <span class="axis-label">Roll (X)</span>
+                        <div class="value-wrapper"><span id="roll">0.0</span><span class="unit">°</span></div>
+                    </div>
+                    <div class="metric-item">
+                        <span class="axis-label">Pitch (Y)</span>
+                        <div class="value-wrapper"><span id="pitch">0.0</span><span class="unit">°</span></div>
+                    </div>
+                    <div class="metric-item">
+                        <span class="axis-label">Yaw (Z)</span>
+                        <div class="value-wrapper"><span id="yaw">0.0</span><span class="unit">°</span></div>
+                    </div>
+                </div>
+            </div>
 
-        <div id="resultArea" style="margin-top: 15px; font-weight: bold; color: #333;"></div>
+            <div id="cardAccelerometer" class="card sensor-card accelerometer hidden">
+                <h2>Accelerometer</h2>
+                <div class="metric-row">
+                    <div class="metric-item">
+                        <span class="axis-label x-axis">X-Axis</span>
+                        <div class="value-wrapper"><span id="ax">0.00</span><span class="unit">m/s²</span></div>
+                    </div>
+                    <div class="metric-item">
+                        <span class="axis-label y-axis">Y-Axis</span>
+                        <div class="value-wrapper"><span id="ay">0.00</span><span class="unit">m/s²</span></div>
+                    </div>
+                    <div class="metric-item">
+                        <span class="axis-label z-axis">Z-Axis</span>
+                        <div class="value-wrapper"><span id="az">0.00</span><span class="unit">m/s²</span></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
     </div>
-
-
-    <div class="card">
-        <h2>Orientation</h2>
-        <p>Roll : <span id="roll">0</span>°</p>
-        <p>Pitch : <span id="pitch">0</span>°</p>
-        <p>Yaw : <span id="yaw">0</span>°</p>
-    </div>
-
-
-    <div class="card">
-        <h2>Accelerometer</h2>
-        <p>X : <span id="ax">0</span></p>
-        <p>Y : <span id="ay">0</span></p>
-        <p>Z : <span id="az">0</span></p>
-    </div>
-
-
 </div>
-
 
 </body>
 </html>
-
