@@ -14,7 +14,7 @@ let results = [];
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // --- ระบบตัวกรองสัญญาณ (Simple Moving Average - SMA) สำหรับฝั่งคอมพิวเตอร์ ---
-const WINDOW_SIZE = 12;            // จำนวนข้อมูลที่จะนำมาเฉลี่ย (ยิ่งเยอะยิ่งนิ่ง)
+const WINDOW_SIZE = 12;            // จำนวนข้อมูลที่จะนำมาเฉลี่ย
 const ORIENTATION_THRESHOLD = 0.4; // เกณฑ์ล็อกค่านิ่งของมุม (องศา)
 const MOTION_THRESHOLD = 0.05;     // เกณฑ์ล็อกค่านิ่งของความเร่ง (m/s²)
 
@@ -30,7 +30,7 @@ let currentAx = 0, currentAy = 0, currentAz = 0;
 function getAverage(array, newValue, size) {
     array.push(newValue);
     if (array.length > size) {
-        array.shift(); // นำค่าเก่าสุดออกเมื่อข้อมูลเกินขนาดคิว
+        array.shift(); 
     }
     const sum = array.reduce((a, b) => a + b, 0);
     return sum / array.length;
@@ -47,15 +47,13 @@ function resetFilterHistory() {
 
 
 /* ===========================================================
-   1. 📱 ฝั่งโทรศัพท์มือถือ: ส่งข้อมูลเซนเซอร์ดิบ + Offset (Roll + 1)
+   1. 📱 ฝั่งโทรศัพท์มือถือ: ฟังก์ชันเปิดรับฟังเซนเซอร์ และส่งขึ้นเซิร์ฟเวอร์
 =========================================================== */
-if (isMobile) {
-    console.log("โหมดทำงาน: [โทรศัพท์มือถือ - ส่งสัญญาณเซนเซอร์]");
-
+function initMobileSensors() {
     window.addEventListener("deviceorientation", (event) => {
-        if (!training) return; // ส่งข้อมูลเฉพาะตอนที่กด Start Training เท่านั้น
+        if (!training) return; 
         
-        // ชดเชยค่าตามต้องการ (Roll + 1, Pitch + 0, Yaw + 0)
+        // ชดเชยค่าตามที่ตั้งไว้ (Roll + 1, Pitch + 0, Yaw + 0)
         socket.emit("phone-orientation", {
             roll: (event.gamma || 0) + 1,
             pitch: (event.beta || 0) + 0,
@@ -75,6 +73,13 @@ if (isMobile) {
             az: acc.z || 0
         });
     });
+    console.log("ระบบดักฟังเซนเซอร์บนมือถือพร้อมทำงานแล้ว");
+}
+
+if (isMobile) {
+    console.log("โหมดทำงาน: [โทรศัพท์มือถือ - ส่งสัญญาณเซนเซอร์]");
+    // สำหรับ Android บราวเซอร์มักจะยอมเปิดให้ใช้งานได้ทันทีเมื่อเรียกใช้ window Event
+    initMobileSensors();
 }
 
 
@@ -84,37 +89,31 @@ if (isMobile) {
 if (!isMobile) {
     console.log("โหมดทำงาน: [คอมพิวเตอร์ - แดชบอร์ดรับข้อมูล]");
 
-    // ดักจับข้อมูลมุมเอียงจากโทรศัพท์
+    // รับข้อมูลมุมเอียงจากโทรศัพท์
     socket.on("update-orientation", (data) => {
-        // 1. กรองสัญญาณรบกวนด้วย Moving Average
         const avgRoll = getAverage(historyRoll, data.roll, WINDOW_SIZE);
         const avgPitch = getAverage(historyPitch, data.pitch, WINDOW_SIZE);
         const avgYaw = getAverage(historyYaw, data.yaw, WINDOW_SIZE);
 
-        // 2. ล็อกค่านิ่งด้วยระบบขอบเขต (Threshold)
         if (Math.abs(avgRoll - currentRoll) > ORIENTATION_THRESHOLD) currentRoll = avgRoll;
         if (Math.abs(avgPitch - currentPitch) > ORIENTATION_THRESHOLD) currentPitch = avgPitch;
         if (Math.abs(avgYaw - currentYaw) > ORIENTATION_THRESHOLD) currentYaw = avgYaw;
 
-        // 3. แสดงผลตัวเลขลงหน้าจอคอมพิวเตอร์
         document.getElementById("roll").textContent = currentRoll.toFixed(1);
         document.getElementById("pitch").textContent = currentPitch.toFixed(1);
         document.getElementById("yaw").textContent = currentYaw.toFixed(1);
     });
 
-    // ดักจับข้อมูลความเร่งจากโทรศัพท์
+    // รับข้อมูลความเร่งจากโทรศัพท์
     socket.on("update-motion", (data) => {
-        // 1. กรองสัญญาณรบกวนด้วย Moving Average
         const avgAx = getAverage(historyAx, data.ax, WINDOW_SIZE);
         const avgAy = getAverage(historyAy, data.ay, WINDOW_SIZE);
         const avgAz = getAverage(historyAz, data.az, WINDOW_SIZE);
 
-        // 2. ล็อกค่านิ่งด้วยระบบขอบเขต (Threshold)
         if (Math.abs(avgAx - currentAx) > MOTION_THRESHOLD) currentAx = avgAx;
-        if (Math.abs(avgAy - currentAy) > MOTION_THRESHOLD) currentAy = avgAy;
+        if (Math.abs(avgAy - currentAy) > MOTION_THRESHOLD) currentAy = avgAy; // แก้ไขบั๊กตัวแปรเทียบจากโค้ดเดิม
         if (Math.abs(avgAz - currentAz) > MOTION_THRESHOLD) currentAz = avgAz;
 
-        // 3. แสดงผลตัวเลขลงหน้าจอคอมพิวเตอร์
         document.getElementById("ax").textContent = currentAx.toFixed(2);
         document.getElementById("ay").textContent = currentAy.toFixed(2);
         document.getElementById("az").textContent = currentAz.toFixed(2);
@@ -155,15 +154,20 @@ document.getElementById("startBtn").onclick = async () => {
     training = true;
     startTime = Date.now();
 
-    // ร้องขอสิทธิ์เข้าถึงเซนเซอร์ (สำหรับอุปกรณ์ตระกูล iOS)
+    // 🔴 จุดสำคัญ: ร้องขอสิทธิ์เข้าถึงเซนเซอร์สำหรับ iOS (ต้องทำงานผ่าน User Interaction เช่นการกดปุ่ม)
     if (
         typeof DeviceMotionEvent !== "undefined" &&
         typeof DeviceMotionEvent.requestPermission === "function"
     ) {
         try {
-            await DeviceMotionEvent.requestPermission();
+            const permissionState = await DeviceMotionEvent.requestPermission();
+            if (permissionState === "granted") {
+                initMobileSensors(); // ได้รับอนุญาตแล้ว ให้เริ่มผูก Event สัญญาณทันที
+            } else {
+                alert("สิทธิ์การเข้าถึง Motion Sensor ถูกปฏิเสธ! ไม่สามารถส่งข้อมูลได้");
+            }
         } catch (e) {
-            console.error("การขอสิทธิ์เข้าถึงเซนเซอร์ถูกปฏิเสธ:", e);
+            console.error("ข้อผิดพลาดในการขอสิทธิ์อุปกรณ์:", e);
         }
     }
 
@@ -186,12 +190,10 @@ document.getElementById("resetBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 
-    // ล้างตัวกรองและลบอาร์เรย์เก็บผลลัพธ์ข้อมูลทั้งหมด
     resetFilterHistory();
     currentSet = 1;
     results = [];
 
-    // รีเซ็ตข้อความบนหน้าจอคอมพิวเตอร์
     document.getElementById("timer").textContent = "0 s";
     document.getElementById("currentSet").textContent = "1";
     document.getElementById("resultArea").innerHTML = `<p class="placeholder-text">ยังไม่มีข้อมูลการบันทึกเซต</p>`;
@@ -220,7 +222,7 @@ document.getElementById("saveSetBtn").onclick = () => {
     document.getElementById("timer").textContent = "0 s";
    
     if (training) {
-        startTime = Date.now(); // ถ้ายังไม่กดหยุด ให้เริ่มจับเวลาเซตต่อไปทันที
+        startTime = Date.now(); 
     }
 };
 
