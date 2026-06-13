@@ -1,4 +1,4 @@
-// เปลี่ยน URL ตรงนี้ให้เป็นลิงก์เซิร์ฟเวอร์ของคุณที่ได้จากขั้นตอนที่ 1 (เช่น ของ Glitch หรือ Replit)
+// ⚠️ เปลี่ยน URL ตรงนี้ให้เป็นลิงก์เซิร์ฟเวอร์ Socket.io ของคุณ (เช่น ที่รันบน Glitch หรือ Replit)
 const SERVER_URL = "https://your-project.glitch.me"; 
 const socket = io(SERVER_URL);
 
@@ -10,33 +10,33 @@ let timerInterval;
 let currentSet = 1;
 let results = [];
 
-// ตรวจสอบประเภทอุปกรณ์ (ว่าเป็นโทรศัพท์มือถือ/แท็บเล็ต หรือคอมพิวเตอร์)
+// ตรวจสอบประเภทอุปกรณ์ (แยกฝั่งส่งข้อมูลบนมือถือ และฝั่งรับข้อมูลบนคอมพิวเตอร์)
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// --- ระบบตัวกรองสัญญาณ (SMA Filter) สำหรับฝั่งรับข้อมูล (คอมพิวเตอร์) ---
-const WINDOW_SIZE = 12;            // จำนวนข้อมูลที่จะนำมาเฉลี่ย (ยิ่งเยอะยิ่งนิ่ง แต่จะหน่วงขึ้นเล็กน้อย)
+// --- ระบบตัวกรองสัญญาณ (Simple Moving Average - SMA) สำหรับฝั่งคอมพิวเตอร์ ---
+const WINDOW_SIZE = 12;            // จำนวนข้อมูลที่จะนำมาเฉลี่ย (ยิ่งเยอะยิ่งนิ่ง)
 const ORIENTATION_THRESHOLD = 0.4; // เกณฑ์ล็อกค่านิ่งของมุม (องศา)
 const MOTION_THRESHOLD = 0.05;     // เกณฑ์ล็อกค่านิ่งของความเร่ง (m/s²)
 
-// ตัวแปรสำหรับเก็บประจุข้อมูลย้อนหลัง (Queue)
+// ตัวแปรสำหรับเก็บข้อมูลย้อนหลัง (คิวเพื่อหาค่าเฉลี่ย)
 let historyRoll = [], historyPitch = [], historyYaw = [];
 let historyAx = [], historyAy = [], historyAz = [];
 
-// ตัวแปรสำหรับล็อกค่าปัจจุบันที่แสดงบนหน้าจอ
+// ตัวแปรสำหรับล็อกค่าปัจจุบันที่แสดงบนหน้าจอคอมพิวเตอร์
 let currentRoll = 0, currentPitch = 0, currentYaw = 0;
 let currentAx = 0, currentAy = 0, currentAz = 0;
 
-// ฟังก์ชันสำหรับคำนวณค่าเฉลี่ยเคลื่อนที่
+// ฟังก์ชันคำนวณค่าเฉลี่ยเคลื่อนที่ (Moving Average Filter)
 function getAverage(array, newValue, size) {
     array.push(newValue);
     if (array.length > size) {
-        array.shift(); // เอาค่าเก่าสุดออก
+        array.shift(); // นำค่าเก่าสุดออกเมื่อข้อมูลเกินขนาดคิว
     }
     const sum = array.reduce((a, b) => a + b, 0);
     return sum / array.length;
 }
 
-// ฟังก์ชันล้างประวัติการกรอง
+// ฟังก์ชันล้างประวัติการกรองสัญญาณ
 function resetFilterHistory() {
     historyRoll = []; historyPitch = []; historyYaw = [];
     historyAx = []; historyAy = []; historyAz = [];
@@ -47,15 +47,15 @@ function resetFilterHistory() {
 
 
 /* ===========================================================
-   1. ฝั่งโทรศัพท์มือถือ: อ่านค่าเซนเซอร์ ดึงค่าดิบ + ชดเชยค่า แล้วส่งขึ้นเซิร์ฟเวอร์
+   1. 📱 ฝั่งโทรศัพท์มือถือ: ส่งข้อมูลเซนเซอร์ดิบ + Offset (Roll + 1)
 =========================================================== */
 if (isMobile) {
-    console.log("อุปกรณ์นี้ทำหน้าที่: [ส่งข้อมูลเซนเซอร์]");
+    console.log("โหมดทำงาน: [โทรศัพท์มือถือ - ส่งสัญญาณเซนเซอร์]");
 
     window.addEventListener("deviceorientation", (event) => {
-        if (!training) return;
+        if (!training) return; // ส่งข้อมูลเฉพาะตอนที่กด Start Training เท่านั้น
         
-        // ดึงค่าเซนเซอร์ดิบ และทำการบวก Offset ตามกำหนด (Roll + 1, Pitch + 0, Yaw + 0)
+        // ชดเชยค่าตามต้องการ (Roll + 1, Pitch + 0, Yaw + 0)
         socket.emit("phone-orientation", {
             roll: (event.gamma || 0) + 1,
             pitch: (event.beta || 0) + 0,
@@ -79,42 +79,42 @@ if (isMobile) {
 
 
 /* ===========================================================
-   2. ฝั่งคอมพิวเตอร์: รอรับข้อมูลเรียลไทม์ นำมากรองสัญญาณ (SMA) แล้วอัปเดตหน้าจอ
+   2. 💻 ฝั่งคอมพิวเตอร์: รอรับข้อมูลจากเซิร์ฟเวอร์ -> กรองสัญญาณ -> อัปเดตหน้าจอ
 =========================================================== */
 if (!isMobile) {
-    console.log("อุปกรณ์นี้ทำหน้าที่: [รับข้อมูลมาแสดงผลบนแดชบอร์ด]");
+    console.log("โหมดทำงาน: [คอมพิวเตอร์ - แดชบอร์ดรับข้อมูล]");
 
-    // รับข้อมูลมุมเอียง (Orientation) จากมือถือ
+    // ดักจับข้อมูลมุมเอียงจากโทรศัพท์
     socket.on("update-orientation", (data) => {
-        // 1. กรองข้อมูลผ่าน Moving Average
+        // 1. กรองสัญญาณรบกวนด้วย Moving Average
         const avgRoll = getAverage(historyRoll, data.roll, WINDOW_SIZE);
         const avgPitch = getAverage(historyPitch, data.pitch, WINDOW_SIZE);
         const avgYaw = getAverage(historyYaw, data.yaw, WINDOW_SIZE);
 
-        // 2. ตรวจสอบกับค่าขอบเขต (Threshold) เพื่อป้องกันตัวเลขสั่นขยับยิบๆ
+        // 2. ล็อกค่านิ่งด้วยระบบขอบเขต (Threshold)
         if (Math.abs(avgRoll - currentRoll) > ORIENTATION_THRESHOLD) currentRoll = avgRoll;
         if (Math.abs(avgPitch - currentPitch) > ORIENTATION_THRESHOLD) currentPitch = avgPitch;
         if (Math.abs(avgYaw - currentYaw) > ORIENTATION_THRESHOLD) currentYaw = avgYaw;
 
-        // 3. แสดงผลบนแดชบอร์ดคอมพิวเตอร์
+        // 3. แสดงผลตัวเลขลงหน้าจอคอมพิวเตอร์
         document.getElementById("roll").textContent = currentRoll.toFixed(1);
         document.getElementById("pitch").textContent = currentPitch.toFixed(1);
         document.getElementById("yaw").textContent = currentYaw.toFixed(1);
     });
 
-    // รับข้อมูลความเร่ง (Accelerometer) จากมือถือ
+    // ดักจับข้อมูลความเร่งจากโทรศัพท์
     socket.on("update-motion", (data) => {
-        // 1. กรองข้อมูลผ่าน Moving Average
+        // 1. กรองสัญญาณรบกวนด้วย Moving Average
         const avgAx = getAverage(historyAx, data.ax, WINDOW_SIZE);
         const avgAy = getAverage(historyAy, data.ay, WINDOW_SIZE);
         const avgAz = getAverage(historyAz, data.az, WINDOW_SIZE);
 
-        // 2. ตรวจสอบกับค่าขอบเขต (Threshold) เพื่อล็อกค่านิ่งสนิท
+        // 2. ล็อกค่านิ่งด้วยระบบขอบเขต (Threshold)
         if (Math.abs(avgAx - currentAx) > MOTION_THRESHOLD) currentAx = avgAx;
-        if (Math.abs(avgAy - currentAy) > MOTION_THRESHOLD) currentAx = avgAy; // หมายเหตุ: อิงตามระบบตัวแปรล็อกค่าของเดิม
+        if (Math.abs(avgAy - currentAy) > MOTION_THRESHOLD) currentAy = avgAy;
         if (Math.abs(avgAz - currentAz) > MOTION_THRESHOLD) currentAz = avgAz;
 
-        // 3. แสดงผลบนแดชบอร์ดคอมพิวเตอร์
+        // 3. แสดงผลตัวเลขลงหน้าจอคอมพิวเตอร์
         document.getElementById("ax").textContent = currentAx.toFixed(2);
         document.getElementById("ay").textContent = currentAy.toFixed(2);
         document.getElementById("az").textContent = currentAz.toFixed(2);
@@ -123,7 +123,7 @@ if (!isMobile) {
 
 
 /* ===========================================================
-   3. ระบบสลับแผงการ์ดแสดงผลเซนเซอร์ (Tabs)
+   3. 🔘 ระบบสลับแผงการ์ดเซนเซอร์ (Tabs Switching Logic)
 =========================================================== */
 const tabOrientation = document.getElementById("tabOrientation");
 const tabAccelerometer = document.getElementById("tabAccelerometer");
@@ -146,24 +146,28 @@ tabAccelerometer.onclick = () => {
 
 
 /* ===========================================================
-   4. ระบบควบคุมปุ่มกดและการทำงานหลัก (Control Actions)
+   4. 🛠️ ระบบควบคุมและฟังก์ชันการบันทึกเวลาฝึก (Control Actions)
 =========================================================== */
 
-/* START */
+/* ปุ่ม START TRAINING */
 document.getElementById("startBtn").onclick = async () => {
     if (training) return;
     training = true;
     startTime = Date.now();
 
+    // ร้องขอสิทธิ์เข้าถึงเซนเซอร์ (สำหรับอุปกรณ์ตระกูล iOS)
     if (
         typeof DeviceMotionEvent !== "undefined" &&
         typeof DeviceMotionEvent.requestPermission === "function"
     ) {
         try {
             await DeviceMotionEvent.requestPermission();
-        } catch (e) {}
+        } catch (e) {
+            console.error("การขอสิทธิ์เข้าถึงเซนเซอร์ถูกปฏิเสธ:", e);
+        }
     }
 
+    // เปิดระบบจับเวลารันเซต
     clearInterval(timerInterval);
     timerInterval = setInterval(() => {
         const sec = Math.floor((Date.now() - startTime) / 1000);
@@ -171,23 +175,23 @@ document.getElementById("startBtn").onclick = async () => {
     }, 1000);
 };
 
-/* STOP */
+/* ปุ่ม STOP */
 document.getElementById("stopBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 };
 
-/* RESET */
+/* ปุ่ม RESET ALL */
 document.getElementById("resetBtn").onclick = () => {
     training = false;
     clearInterval(timerInterval);
 
-    // รีเซ็ตตัวกรองและชุดข้อมูลทั้งหมด
+    // ล้างตัวกรองและลบอาร์เรย์เก็บผลลัพธ์ข้อมูลทั้งหมด
     resetFilterHistory();
-   
     currentSet = 1;
     results = [];
 
+    // รีเซ็ตข้อความบนหน้าจอคอมพิวเตอร์
     document.getElementById("timer").textContent = "0 s";
     document.getElementById("currentSet").textContent = "1";
     document.getElementById("resultArea").innerHTML = `<p class="placeholder-text">ยังไม่มีข้อมูลการบันทึกเซต</p>`;
@@ -200,7 +204,7 @@ document.getElementById("resetBtn").onclick = () => {
     document.getElementById("az").textContent = "0.00";
 };
 
-/* SAVE SET */
+/* ปุ่ม SAVE SET */
 document.getElementById("saveSetBtn").onclick = () => {
     const sec = startTime === 0 ? 0 : Math.floor((Date.now() - startTime) / 1000);
 
@@ -216,11 +220,11 @@ document.getElementById("saveSetBtn").onclick = () => {
     document.getElementById("timer").textContent = "0 s";
    
     if (training) {
-        startTime = Date.now();
+        startTime = Date.now(); // ถ้ายังไม่กดหยุด ให้เริ่มจับเวลาเซตต่อไปทันที
     }
 };
 
-/* DOWNLOAD CSV */
+/* ปุ่ม DOWNLOAD CSV */
 document.getElementById("downloadBtn").onclick = () => {
     if (results.length === 0) {
         alert("ไม่มีข้อมูลให้ดาวน์โหลด กรุณาบันทึกเซตก่อนครับ");
@@ -228,7 +232,6 @@ document.getElementById("downloadBtn").onclick = () => {
     }
 
     let csv = "Set,Time(s)\n";
-
     results.forEach(r => {
         csv += `${r.set},${r.time}\n`;
     });
@@ -241,7 +244,7 @@ document.getElementById("downloadBtn").onclick = () => {
     a.click();
 };
 
-/* SHOW RESULTS */
+/* ฟังก์ชันเรนเดอร์ประวัติการบันทึกเวลาบนหน้าจอ */
 function showResults() {
     if (results.length === 0) {
         document.getElementById("resultArea").innerHTML = `<p class="placeholder-text">ยังไม่มีข้อมูลการบันทึกเซต</p>`;
