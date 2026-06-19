@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Digital Twin - Mobile Transmitter</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            overflow: hidden;
+        }
+        .app-header {
+            margin-top: 20px;
+            margin-bottom: 30px;
+        }
+        .app-title {
+            font-size: 26px;
+            font-weight: 800;
+            margin: 0;
+            color: #007bff;
+        }
+        .app-subtitle {
+            font-size: 14px;
+            color: #888;
+            margin-top: 5px;
+        }
+        .status-card {
+            background: #1e1e1e;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            margin-bottom: 25px;
+            border: 1px solid #2c2c2c;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            background-color: #28a745;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            box-shadow: 0 0 8px #28a745;
+        }
+        .status-text {
+            font-size: 16px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .btn-permission {
+            background-color: #0b57d0;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(11, 87, 208, 0.4);
+            transition: 0.2s;
+            margin-top: 20px;
+        }
+        .btn-permission:active {
+            background-color: #0045b5;
+            transform: scale(0.98);
+        }
+        .info-text {
+            font-size: 13px;
+            color: #aaa;
+            line-height: 1.5;
+            margin-top: 20px;
+            padding: 0 10px;
+        }
+        .data-preview {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+        }
+        .data-box {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #222;
+        }
+        .data-val {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-header">
+    <h1 class="app-title">Digital Twin</h1>
+    <div class="app-subtitle">Mobile Sensor Transmitter v1.0</div>
+</div>
+
+<div class="status-card">
+    <div style="margin-bottom: 15px;">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">ระบบพร้อมส่งสัญญาณ</span>
+    </div>
+    <div id="activeModeText" style="font-size: 14px; color: #aaa;">โหมดปัจจุบัน: สแตนด์บายตามแดชบอร์ด PC</div>
+    
+    <button id="requestBtn" class="btn-permission">เปิดใช้งานเซนเซอร์</button>
+</div>
+
+<div class="info-text">
+    * วางสมาร์ตโฟนแนบกับข้อต่อของผู้รับการทดสอบ ระบบจะทำการส่งข้อมูลทิศทางและการหมุนแบบ Real-time ไปยังหน้าจอ <strong>Digital Twin Dashboard</strong> บนคอมพิวเตอร์โดยอัตโนมัติ
+</div>
+
+<div class="data-preview">
+    <div class="data-box"><div>Pitch (X)</div><div class="data-val" id="valX">0.0°</div></div>
+    <div class="data-box"><div>Roll (Y)</div><div class="data-val" id="valY">0.0°</div></div>
+    <div class="data-box"><div>Yaw (Z)</div><div class="data-val" id="valZ">0.0°</div></div>
+</div>
+
+<script>
+    const firebaseConfig = {
+        databaseURL: "https://llllllll-3c932-default-rtdb.asia-southeast1.firebasedatabase.app/" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    let activeTab = "orientation";
+    let lastSendTime = 0;
+    const SEND_INTERVAL = 50; // บังคับให้ส่งข้อมูลทุกๆ 50ms (20 PPS นิ่งๆ แก้ไขข้อมูลคอขวดบน Firebase)
+
+    database.ref("system/currentTab").on("value", (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+            activeTab = val;
+            const modeText = document.getElementById("activeModeText");
+            if (val === "orientation") {
+                modeText.innerHTML = "โหมดปัจจุบัน: <span style='color:#007bff; font-weight:bold;'>ส่งค่าองศาการหมุน (Orientation)</span>";
+            } else {
+                modeText.innerHTML = "โหมดปัจจุบัน: <span style='color:#e67e22; font-weight:bold;'>ส่งค่าความเร่ง (Motion)</span>";
+            }
+        }
+    });
+
+    database.ref("system/alert").on("value", (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return;
+        const statusText = document.getElementById("statusText");
+        const statusDot = document.getElementById("statusDot");
+
+        if (data.action === "start") {
+            statusText.textContent = "กำลังบันทึกข้อมูล (Recording...)";
+            statusText.style.color = "#dc3545";
+            statusDot.style.backgroundColor = "#dc3545";
+            statusDot.style.boxShadow = "0 0 8px #dc3545";
+        } else if (data.action === "stop" || data.action === "saveset" || data.action === "reset") {
+            statusText.textContent = "ระบบพร้อมส่งสัญญาณ (สแตนด์บาย)";
+            statusText.style.color = "#28a745";
+            statusDot.style.backgroundColor = "#28a745";
+            statusDot.style.boxShadow = "0 0 8px #28a745";
+        }
+    });
+
+    const requestBtn = document.getElementById("requestBtn");
+    requestBtn.onclick = () => {
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission()
+                .then(permissionState => {
+                    if (permissionState === 'granted') {
+                        startStreaming();
+                        requestBtn.style.display = "none";
+                    } else {
+                        alert("โปรดอนุญาตสิทธิ์การเข้าถึงเซนเซอร์เพื่อใช้งานหน้าเว็บนี้");
+                    }
+                })
+                .catch(console.error);
+        } else {
+            startStreaming();
+            requestBtn.style.display = "none";
+        }
+    };
+
+    function startStreaming() {
+        window.addEventListener("deviceorientation", (event) => {
+            if (activeTab !== "orientation") return;
+
+            const now = Date.now();
+            if (now - lastSendTime < SEND_INTERVAL) return; // ล็อกเรตการส่ง
+            lastSendTime = now;
+
+            let roll = event.gamma || 0;
+            let pitch = event.beta || 0;
+            let yaw = event.alpha || 0;
+
+            document.getElementById("valX").textContent = pitch.toFixed(1) + "°";
+            document.getElementById("valY").textContent = roll.toFixed(1) + "°";
+            document.getElementById("valZ").textContent = yaw.toFixed(1) + "°";
+
+            // ส่งข้อมูลพิกัดละเอียดพร้อมค่า Timestamp ไปซิงค์ความเร็วระหว่างกันฝั่งแดชบอร์ด PC
+            database.ref("sensor/orientation").set({
+                roll: parseFloat(roll.toFixed(2)),
+                pitch: parseFloat(pitch.toFixed(2)),
+                yaw: parseFloat(yaw.toFixed(2)),
+                clientTimestamp: now
+            });
+        });
+
+        window.addEventListener("devicemotion", (event) => {
+            if (activeTab !== "accelerometer") return;
+            const acc = event.accelerationIncludingGravity;
+            if (!acc) return;
+            
+            database.ref("sensor/motion").set({
+                ax: acc.x || 0,
+                ay: acc.y || 0,
+                az: acc.z || 0
+            });
+        });
+    }
+</script>
+</body>
+</html>
